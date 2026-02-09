@@ -202,9 +202,16 @@ class OrdenCompraResource extends Resource
 
     public static function form(Form $form): Form
     {
-        $proveedorFormSchema = ProveedorResource::getFormSchema(useRelationships: false, lockConnectionFields: true);
-        $productoFormSchema = ProductoResource::getFormSchema(useRelationships: false, lockConnectionFields: true);
+        $proveedorFormSchema = ProveedorResource::getFormSchema(
+            useRelationships: false,
+            lockConnectionFields: true,
 
+        );
+        $productoFormSchema = ProductoResource::getFormSchema(
+            useRelationships: false,
+            lockConnectionFields: true,
+
+        );
         return $form
 
             ->schema([
@@ -966,15 +973,21 @@ class OrdenCompraResource extends Resource
                                             ->prefix('$')
                                             ->live(debounce: 1200)
                                             ->extraInputAttributes([
-                                                'inputmode' => 'decimal', // teclado num�rico en m�vil
-                                                'oninput' => "this.value = this.value
-            .replace(/[^0-9.]/g,'')        // quita letras/s�mbolos
-            .replace(/(\\..*)\\./g,'$1');  // solo 1 punto",
-                                                'onpaste' => "event.preventDefault();
-            let t=(event.clipboardData||window.clipboardData).getData('text');
-            t=t.replace(/[^0-9.]/g,'').replace(/(\\..*)\\./g,'$1');
-            document.execCommand('insertText', false, t);",
+                                                'inputmode' => 'decimal',
+                                                'oninput' => "let v=this.value
+        .replace(/[^0-9.]/g,'')          // solo números y punto
+        .replace(/(\\..*)\\./g,'$1');    // solo 1 punto
+
+        // limitar a 6 decimales
+        if (v.includes('.')) {
+            const parts = v.split('.');
+            parts[0] = parts[0].replace(/^0+(?=\\d)/,''); // opcional: quita ceros a la izquierda
+            parts[1] = (parts[1] || '').slice(0,6);
+            v = parts[0] + '.' + parts[1];
+        }
+        this.value = v;",
                                             ])
+                                            ->rule('regex:/^\d+(\.\d{0,6})?$/')
                                             ->rule('regex:/^\d+(\.\d{0,6})?$/') // valida backend
                                             ->dehydrateStateUsing(fn($state) => $state === '' || $state === null ? 0 : (float) $state)
                                             ->afterStateUpdated(fn(Get $get, Set $set) => self::syncTotales($get, $set))
@@ -988,14 +1001,20 @@ class OrdenCompraResource extends Resource
                                             ->live(debounce: 600)
                                             ->extraInputAttributes([
                                                 'inputmode' => 'decimal',
-                                                'oninput' => "this.value = this.value
-            .replace(/[^0-9.]/g,'')
-            .replace(/(\\..*)\\./g,'$1');",
-                                                'onpaste' => "event.preventDefault();
-            let t=(event.clipboardData||window.clipboardData).getData('text');
-            t=t.replace(/[^0-9.]/g,'').replace(/(\\..*)\\./g,'$1');
-            document.execCommand('insertText', false, t);",
+                                                'oninput' => "let v=this.value
+        .replace(/[^0-9.]/g,'')          // solo números y punto
+        .replace(/(\\..*)\\./g,'$1');    // solo 1 punto
+
+        // limitar a 6 decimales
+        if (v.includes('.')) {
+            const parts = v.split('.');
+            parts[0] = parts[0].replace(/^0+(?=\\d)/,''); // opcional: quita ceros a la izquierda
+            parts[1] = (parts[1] || '').slice(0,6);
+            v = parts[0] + '.' + parts[1];
+        }
+        this.value = v;",
                                             ])
+                                            ->rule('regex:/^\d+(\.\d{0,6})?$/')
                                             ->rule('regex:/^\d+(\.\d{0,6})?$/')
                                             ->dehydrateStateUsing(fn($state) => $state === '' || $state === null ? 0 : (float) $state)
                                             ->afterStateUpdated(fn(Get $get, Set $set) => self::syncTotales($get, $set))
