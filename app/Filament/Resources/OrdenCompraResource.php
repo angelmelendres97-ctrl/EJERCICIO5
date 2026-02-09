@@ -20,12 +20,12 @@ use App\Models\Producto;
 use App\Services\ProveedorSyncService;
 use App\Services\ProductoSyncService;
 use Filament\Support\RawJs;
-
+use Filament\Forms\ComponentContainer;
+use Filament\Forms\Components\Wizard;
+use Filament\Forms\Components\Wizard\Step;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Section;
 use Filament\Forms\Components\Grid;
-use Filament\Forms\Components\Wizard;
-use Filament\Forms\Components\Wizard\Step;
 use Filament\Tables\Filters\Filter;
 use Filament\Forms\Get;
 use Filament\Forms\Components\Actions\Action;
@@ -202,7 +202,11 @@ class OrdenCompraResource extends Resource
 
     public static function form(Form $form): Form
     {
+        $proveedorFormSchema = ProveedorResource::getFormSchema(useRelationships: false, lockConnectionFields: true);
+        $productoFormSchema = ProductoResource::getFormSchema(useRelationships: false, lockConnectionFields: true);
+
         return $form
+
             ->schema([
 
                 Forms\Components\Section::make('Conexi贸n y Empresa')
@@ -447,22 +451,75 @@ class OrdenCompraResource extends Resource
                             ->required()
                             ->columnSpan(2)
                             ->suffixAction(
-                                Action::make('crear_proveedor_link')
+                                Action::make('crear_proveedor_modal')
                                     ->label('+')
-                                    ->tooltip('Crear proveedor (abrir formulario)')
-                                    ->icon('heroicon-o-arrow-top-right-on-square')
-                                    ->url(fn(Get $get) => ProveedorResource::getUrl('create', [
-                                        // Lo que OrdenCompra usa
-                                        'id_empresa'        => $get('id_empresa'),
-                                        'amdg_id_empresa'   => $get('amdg_id_empresa'),
-                                        'amdg_id_sucursal'  => $get('amdg_id_sucursal'),
+                                    ->tooltip('Crear proveedor')
+                                    ->icon('heroicon-o-plus')
+                                    ->modalHeading('Crear proveedor')
+                                    ->modalWidth('7xl')
+                                    ->form([
+                                        Wizard::make([
+                                            Step::make('Informaci贸n general')
+                                                ->schema([$proveedorFormSchema[0]]),
+                                            Step::make('Clasificaci贸n')
+                                                ->schema([$proveedorFormSchema[1]]),
+                                            Step::make('Condiciones de pago')
+                                                ->schema([$proveedorFormSchema[2]]),
+                                            Step::make('Empresas')
+                                                ->schema([$proveedorFormSchema[3]]),
+                                        ])
+                                            ->columnSpanFull(),
+                                    ])
+                                    ->mountUsing(function (ComponentContainer $form, Get $get): void {
+                                        $form->fill([
+                                            'id_empresa' => $get('id_empresa'),
+                                            'admg_id_empresa' => $get('amdg_id_empresa'),
+                                            'admg_id_sucursal' => $get('amdg_id_sucursal'),
+                                        ]);
+                                    })
+                                    ->action(function (array $data, Set $set): void {
+                                        if (empty($data['empresas_proveedor']) && !empty($data['id_empresa']) && !empty($data['admg_id_empresa'])) {
+                                            $data['empresas_proveedor'] = [
+                                                $data['id_empresa'] . '-' . $data['admg_id_empresa'],
+                                            ];
+                                        }
 
+                                        $record = DB::transaction(function () use ($data) {
+                                            $record = Proveedores::create($data);
 
-                                        // Lo que ProveedorResource suele usar (ojo tu inconsistencia admg/amdg)
-                                        'admg_id_empresa'   => $get('amdg_id_empresa'),
-                                        'admg_id_sucursal'  => $get('amdg_id_sucursal'),
-                                    ]))
-                                    ->openUrlInNewTab()
+                                            $lineasNegocioIds = $data['lineasNegocio'] ?? [];
+                                            $record->lineasNegocio()->attach($lineasNegocioIds);
+
+                                            ProveedorSyncService::sincronizar($record, $data);
+
+                                            return $record;
+                                        });
+
+                                        $connectionName = ProveedorResource::getExternalConnectionName((int) $data['id_empresa']);
+                                        $proveedorCodigo = null;
+
+                                        if ($connectionName) {
+                                            $proveedorCodigo = DB::connection($connectionName)
+                                                ->table('saeclpv')
+                                                ->where('clpv_cod_empr', $data['admg_id_empresa'])
+                                                ->where('clpv_clopv_clpv', 'PV')
+                                                ->where('clpv_ruc_clpv', $data['ruc'])
+                                                ->value('clpv_cod_clpv');
+                                        }
+
+                                        if ($proveedorCodigo) {
+                                            $set('info_proveedor', (string) $proveedorCodigo);
+                                            $set('id_proveedor', $proveedorCodigo);
+                                        }
+
+                                        $set('identificacion', $data['ruc'] ?? null);
+                                        $set('proveedor', $data['nombre'] ?? null);
+
+                                        Notification::make()
+                                            ->title('Proveedor creado correctamente.')
+                                            ->success()
+                                            ->send();
+                                    })
 
 
                             )
@@ -582,16 +639,46 @@ class OrdenCompraResource extends Resource
 
                 Forms\Components\Section::make('Productos')
                     ->headerActions([
-                        Action::make('crear_producto_link')
+                        Action::make('crear_producto_modal')
                             ->label('Nuevo producto')
-                            ->icon('heroicon-o-arrow-top-right-on-square')
-                            ->url(fn(Get $get) => ProductoResource::getUrl('create', [
-                                'id_empresa'        => $get('id_empresa'),
-                                'amdg_id_empresa'   => $get('amdg_id_empresa'),
-                                'amdg_id_sucursal'  => $get('amdg_id_sucursal'),
-                            ]))
-                            ->openUrlInNewTab(),
+                            ->icon('heroicon-o-plus')
+                            ->modalHeading('Crear producto')
+                            ->modalWidth('7xl')
+                            ->disabled(fn(Get $get) => empty($get('id_empresa')) || empty($get('amdg_id_empresa')) || empty($get('amdg_id_sucursal')))
+                            ->form([
+                                Wizard::make([
+                                    Step::make('Conexi贸n')
+                                        ->schema([$productoFormSchema[0]]),
+                                    Step::make('Informaci贸n del producto')
+                                        ->schema([$productoFormSchema[1]]),
+                                    Step::make('Sucursales y bodegas')
+                                        ->schema([$productoFormSchema[2]]),
+                                ])->columnSpanFull(),
+                            ])
+                            ->mountUsing(function (ComponentContainer $form, Get $get): void {
+                                $form->fill([
+                                    'id_empresa'        => $get('id_empresa'),
+                                    'amdg_id_empresa'   => $get('amdg_id_empresa'),
+                                    'amdg_id_sucursal'  => $get('amdg_id_sucursal'),
+                                ]);
+                            })
+                            ->action(function (array $data): void {
+                                DB::transaction(function () use ($data) {
+                                    $record = Producto::create($data);
+
+                                    $lineasNegocioIds = $data['lineasNegocio'] ?? [];
+                                    $record->lineasNegocio()->attach($lineasNegocioIds);
+
+                                    ProductoSyncService::sincronizar($record, $data);
+                                });
+
+                                Notification::make()
+                                    ->title('Producto creado correctamente.')
+                                    ->success()
+                                    ->send();
+                            }),
                     ])
+
                     ->schema([
                         Forms\Components\Repeater::make('detalles')
                             ->schema([
@@ -873,15 +960,15 @@ class OrdenCompraResource extends Resource
                                             ->helperText(fn(Get $get) => filled($get('unidad')) ? 'Unidad: ' . $get('unidad') : null)
                                             ->columnSpan(['default' => 12, 'lg' => 1]),
 
-                                                Forms\Components\TextInput::make('costo')
+                                        Forms\Components\TextInput::make('costo')
                                             ->label('Costo')
                                             ->required()
                                             ->prefix('$')
                                             ->live(debounce: 1200)
                                             ->extraInputAttributes([
-                                                'inputmode' => 'decimal', // teclado num閞ico en m髒il
+                                                'inputmode' => 'decimal', // teclado num锟絩ico en m锟絭il
                                                 'oninput' => "this.value = this.value
-            .replace(/[^0-9.]/g,'')        // quita letras/s韒bolos
+            .replace(/[^0-9.]/g,'')        // quita letras/s锟絤bolos
             .replace(/(\\..*)\\./g,'$1');  // solo 1 punto",
                                                 'onpaste' => "event.preventDefault();
             let t=(event.clipboardData||window.clipboardData).getData('text');
@@ -912,7 +999,8 @@ class OrdenCompraResource extends Resource
                                             ->rule('regex:/^\d+(\.\d{0,6})?$/')
                                             ->dehydrateStateUsing(fn($state) => $state === '' || $state === null ? 0 : (float) $state)
                                             ->afterStateUpdated(fn(Get $get, Set $set) => self::syncTotales($get, $set))
-                                            ->columnSpan(['default' => 12, 'lg' => 2]),                                        Forms\Components\Placeholder::make('subtotal_linea')
+                                            ->columnSpan(['default' => 12, 'lg' => 2]),
+                                        Forms\Components\Placeholder::make('subtotal_linea')
                                             ->label('Subtotal')
                                             ->content(function (Get $get) {
                                                 $cantidad = floatval($get('cantidad'));
