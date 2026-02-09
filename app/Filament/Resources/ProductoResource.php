@@ -74,7 +74,11 @@ class ProductoResource extends Resource
         return $form->schema(self::getFormSchema());
     }
 
-    public static function getFormSchema(bool $useRelationships = true, bool $lockConnectionFields = false): array
+    public static function getFormSchema(
+        bool $useRelationships = true,
+        bool $lockConnectionFields = false,
+        bool $useModalFields = false
+    ): array
     {
         $empresaSelect = Forms\Components\Select::make('id_empresa')
             ->label('Conexion')
@@ -110,13 +114,138 @@ class ProductoResource extends Resource
             ->multiple()
             ->preload()
             ->searchable()
-            ->live()
+            ->reactive()
             ->required();
 
         if ($useRelationships) {
             $lineasNegocioSelect->relationship('lineasNegocio', 'nombre');
         } else {
-            $lineasNegocioSelect->options(fn() => LineaNegocio::query()->pluck('nombre', 'id')->all());
+            $lineasNegocioSelect->options(fn() => LineaNegocio::query()
+                ->orderBy('nombre')
+                ->pluck('nombre', 'id')
+                ->mapWithKeys(fn ($nombre, $id) => [(string) $id => $nombre])
+                ->all());
+        }
+
+        $bodegasOptions = function (Get $get): array {
+            $lineasNegocioIds = $get('lineasNegocio');
+            if (empty($lineasNegocioIds)) {
+                return [];
+            }
+
+            $empresas = Empresa::whereIn('linea_negocio_id', $lineasNegocioIds)
+                ->where('status_conexion', true)
+                ->get();
+
+            $bodegasOptions = [];
+
+            foreach ($empresas as $empresa) {
+                $connectionName = self::getExternalConnectionName($empresa->id);
+                if (!$connectionName) {
+                    continue;
+                }
+
+                try {
+                    $externalBodegas = DB::connection($connectionName)
+                        ->table('saebode as b')
+                        ->join('saesubo as sb', 'b.bode_cod_bode', '=', 'sb.subo_cod_bode')
+                        ->join('saesucu as s', 'sb.subo_cod_sucu', '=', 's.sucu_cod_sucu')
+                        ->select('b.bode_cod_bode', 'b.bode_nom_bode', 's.sucu_nom_sucu')
+                        ->get();
+
+                    foreach ($externalBodegas as $bodega) {
+                        $optionKey = $empresa->id . '-' . trim($bodega->bode_cod_bode);
+                        $optionLabel = $empresa->nombre_empresa . ' - ' . $bodega->sucu_nom_sucu . ' - ' . $bodega->bode_nom_bode;
+                        $bodegasOptions[$optionKey] = $optionLabel;
+                    }
+                } catch (\Exception $e) {
+                    \Log::error('Error al conectar con la base de datos externa para la empresa ID ' . $empresa->id . ': ' . $e->getMessage());
+                    continue;
+                }
+            }
+
+            return $bodegasOptions;
+        };
+
+        $bodegasField = $useModalFields
+            ? Forms\Components\Select::make('bodegas')
+                ->label('Bodegas para replicar')
+                ->multiple()
+                ->options($bodegasOptions)
+                ->searchable()
+                ->preload()
+                ->default([])
+            : Forms\Components\CheckboxList::make('bodegas')
+                ->label('Bodegas para replicar')
+                ->bulkToggleable(false)
+                ->default([])
+                ->options($bodegasOptions);
+
+        $bodegasField->afterStateHydrated(function (Get $get, Set $set, $state) {
+            if (!empty($state)) {
+                return;
+            }
+
+            $lineasNegocioIds = $get('lineasNegocio');
+            $sku = $get('sku');
+
+            if (empty($lineasNegocioIds)) {
+                return;
+            }
+
+            $seleccionados = [];
+
+            $empresas = Empresa::whereIn('linea_negocio_id', $lineasNegocioIds)
+                ->where('status_conexion', true)
+                ->get();
+
+            foreach ($empresas as $empresa) {
+                $connectionName = self::getExternalConnectionName($empresa->id);
+                if (!$connectionName) {
+                    continue;
+                }
+
+                try {
+                    $externalBodegas = DB::connection($connectionName)
+                        ->table('saebode as b')
+                        ->join('saesubo as sb', 'b.bode_cod_bode', '=', 'sb.subo_cod_bode')
+                        ->join('saesucu as s', 'sb.subo_cod_sucu', '=', 's.sucu_cod_sucu')
+                        ->select('b.bode_cod_bode', 'b.bode_nom_bode', 's.sucu_nom_sucu', 's.sucu_cod_empr', 's.sucu_cod_sucu')
+                        ->get();
+
+                    foreach ($externalBodegas as $bodega) {
+                        $optionKey = $empresa->id . '-' . trim($bodega->bode_cod_bode);
+
+                        // -------------------------------
+                        // VERIFICACIÓN DE EXISTENCIA
+                        // -------------------------------
+                        $existeProdBode = DB::connection($connectionName)
+                            ->table('saeprbo')
+                            ->where('prbo_cod_empr', $bodega->sucu_cod_empr)
+                            ->where('prbo_cod_sucu', $bodega->sucu_cod_sucu)
+                            ->where('prbo_cod_bode', trim($bodega->bode_cod_bode))
+                            ->where('prbo_cod_prod', $sku) // proveedor
+                            ->exists();
+
+                        // Si existe → lo marcamos
+                        if ($existeProdBode) {
+                            $seleccionados[] = $optionKey;
+                        }
+                    }
+                } catch (\Exception $e) {
+                    \Log::error("Error en conexión externa empresa {$empresa->id}: " . $e->getMessage());
+                    continue;
+                }
+            }
+
+            // -------------------------------
+            // Setear los checkboxes marcados
+            // -------------------------------
+            $set('bodegas', $seleccionados);
+        });
+
+        if ($bodegasField instanceof Forms\Components\CheckboxList) {
+            $bodegasField->columns(2);
         }
 
         return [
@@ -461,116 +590,7 @@ class ProductoResource extends Resource
                     ])->columns(2),
                 Forms\Components\Section::make('Sucursales y Bodegas Externas')
                     ->schema([
-                        Forms\Components\CheckboxList::make('bodegas')
-                            ->label('Bodegas para replicar')
-                            ->bulkToggleable(false)
-                            ->default([])
-                            ->options(function (Get $get) {
-                                $lineasNegocioIds = $get('lineasNegocio');
-                                if (empty($lineasNegocioIds)) {
-                                    return [];
-                                }
-
-                                $empresas = Empresa::whereIn('linea_negocio_id', $lineasNegocioIds)
-                                    ->where('status_conexion', true)->get();
-
-                                $bodegasOptions = [];
-
-                                foreach ($empresas as $empresa) {
-                                    $connectionName = self::getExternalConnectionName($empresa->id);
-                                    if (!$connectionName) {
-                                        continue;
-                                    }
-
-                                    try {
-                                        $externalBodegas = DB::connection($connectionName)
-                                            ->table('saebode as b')
-                                            ->join('saesubo as sb', 'b.bode_cod_bode', '=', 'sb.subo_cod_bode')
-                                            ->join('saesucu as s', 'sb.subo_cod_sucu', '=', 's.sucu_cod_sucu')
-                                            ->select('b.bode_cod_bode', 'b.bode_nom_bode', 's.sucu_nom_sucu')
-                                            ->get();
-
-                                        foreach ($externalBodegas as $bodega) {
-                                            $optionKey = $empresa->id . '-' . trim($bodega->bode_cod_bode);
-                                            $optionLabel = $empresa->nombre_empresa . ' - ' . $bodega->sucu_nom_sucu . ' - ' . $bodega->bode_nom_bode;
-                                            $bodegasOptions[$optionKey] = $optionLabel;
-                                        }
-                                    } catch (\Exception $e) {
-                                        \Log::error('Error al conectar con la base de datos externa para la empresa ID ' . $empresa->id . ': ' . $e->getMessage());
-                                        continue;
-                                    }
-                                }
-
-                                return $bodegasOptions;
-                            })
-                            ->afterStateHydrated(function (Get $get, Set $set, $state) {
-                                if (!empty($state)) {
-                                    return;
-                                }
-
-                                $lineasNegocioIds = $get('lineasNegocio');
-                                $sku = $get('sku');
-
-                                if (empty($lineasNegocioIds)) {
-                                    return;
-                                }
-
-                                $seleccionados = [];
-
-                                $empresas = Empresa::whereIn('linea_negocio_id', $lineasNegocioIds)
-                                    ->where('status_conexion', true)
-                                    ->get();
-
-                                foreach ($empresas as $empresa) {
-
-                                    $connectionName = self::getExternalConnectionName($empresa->id);
-                                    if (!$connectionName) {
-                                        continue;
-                                    }
-
-                                    try {
-
-
-                                        $externalBodegas = DB::connection($connectionName)
-                                            ->table('saebode as b')
-                                            ->join('saesubo as sb', 'b.bode_cod_bode', '=', 'sb.subo_cod_bode')
-                                            ->join('saesucu as s', 'sb.subo_cod_sucu', '=', 's.sucu_cod_sucu')
-                                            ->select('b.bode_cod_bode', 'b.bode_nom_bode', 's.sucu_nom_sucu', 's.sucu_cod_empr', 's.sucu_cod_sucu')
-                                            ->get();
-
-                                        foreach ($externalBodegas as $bodega) {
-                                            $optionKey = $empresa->id . '-' . trim($bodega->bode_cod_bode);
-                                            $optionLabel = $empresa->nombre_empresa . ' - ' . $bodega->sucu_nom_sucu . ' - ' . $bodega->bode_nom_bode;
-                                            $bodegasOptions[$optionKey] = $optionLabel;
-
-                                            // -------------------------------
-                                            // VERIFICACIÓN DE EXISTENCIA
-                                            // -------------------------------
-                                            $existeProdBode = DB::connection($connectionName)
-                                                ->table('saeprbo')
-                                                ->where('prbo_cod_empr', $bodega->sucu_cod_empr)
-                                                ->where('prbo_cod_sucu', $bodega->sucu_cod_sucu)
-                                                ->where('prbo_cod_bode', trim($bodega->bode_cod_bode))
-                                                ->where('prbo_cod_prod', $sku) // proveedor
-                                                ->exists();
-
-                                            // Si existe → lo marcamos
-                                            if ($existeProdBode) {
-                                                $seleccionados[] = $optionKey;
-                                            }
-                                        }
-                                    } catch (\Exception $e) {
-                                        \Log::error("Error en conexión externa empresa {$empresa->id}: " . $e->getMessage());
-                                        continue;
-                                    }
-                                }
-
-                                // -------------------------------
-                                // Setear los checkboxes marcados
-                                // -------------------------------
-                                $set('bodegas', $seleccionados);
-                            })
-                            ->columns(2)
+                        $bodegasField,
                     ])->columns(1),
         ];
     }

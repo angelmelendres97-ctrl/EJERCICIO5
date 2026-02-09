@@ -202,8 +202,16 @@ class OrdenCompraResource extends Resource
 
     public static function form(Form $form): Form
     {
-        $proveedorFormSchema = ProveedorResource::getFormSchema(useRelationships: false, lockConnectionFields: true);
-        $productoFormSchema = ProductoResource::getFormSchema(useRelationships: false, lockConnectionFields: true);
+        $proveedorFormSchema = ProveedorResource::getFormSchema(
+            useRelationships: false,
+            lockConnectionFields: true,
+            useModalFields: true
+        );
+        $productoFormSchema = ProductoResource::getFormSchema(
+            useRelationships: false,
+            lockConnectionFields: true,
+            useModalFields: true
+        );
 
         return $form
 

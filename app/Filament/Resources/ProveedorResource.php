@@ -64,7 +64,11 @@ class ProveedorResource extends Resource
         return $form->schema(self::getFormSchema());
     }
 
-    public static function getFormSchema(bool $useRelationships = true, bool $lockConnectionFields = false): array
+    public static function getFormSchema(
+        bool $useRelationships = true,
+        bool $lockConnectionFields = false,
+        bool $useModalFields = false
+    ): array
     {
         $empresaSelect = Forms\Components\Select::make('id_empresa')
             ->label('Conexion')
@@ -99,13 +103,149 @@ class ProveedorResource extends Resource
             ->multiple()
             ->preload()
             ->searchable()
-            ->live()
+            ->reactive()
             ->required();
 
         if ($useRelationships) {
             $lineasNegocioSelect->relationship('lineasNegocio', 'nombre');
         } else {
-            $lineasNegocioSelect->options(fn() => LineaNegocio::query()->pluck('nombre', 'id')->all());
+            $lineasNegocioSelect->options(fn() => LineaNegocio::query()
+                ->orderBy('nombre')
+                ->pluck('nombre', 'id')
+                ->mapWithKeys(fn ($nombre, $id) => [(string) $id => $nombre])
+                ->all());
+        }
+
+        $empresasOptions = function (Get $get): array {
+            $lineasNegocioIds = $get('lineasNegocio');
+
+            if (empty($lineasNegocioIds)) {
+                return [];
+            }
+
+            $empresas = Empresa::whereIn('linea_negocio_id', $lineasNegocioIds)
+                ->where('status_conexion', true)
+                ->get();
+
+            $empresasOptions = [];
+
+            foreach ($empresas as $empresa) {
+                $connectionName = self::getExternalConnectionName($empresa->id);
+                if (!$connectionName) {
+                    continue;
+                }
+
+                try {
+                    $externalEmpresas = DB::connection($connectionName)
+                        ->table('saeempr')
+                        ->get();
+
+                    foreach ($externalEmpresas as $data_empresa) {
+                        $optionKey = $empresa->id . '-' . trim($data_empresa->empr_cod_empr);
+                        $optionLabel = $empresa->nombre_empresa . ' - ' . $data_empresa->empr_nom_empr;
+
+                        /*
+                        // ** VERIFICACIÓN DE EXISTENCIA DEL PROVEEDOR **
+                        $existeProveedor = DB::connection($connectionName)
+                            ->table('saeclpv')
+                            ->where('clpv_cod_empr', $amdgIdEmpresaCode)
+                            ->where('clpv_ruc_clpv', $ruc)
+                            ->where('clpv_clopv_clpv', 'PV') // 'PV' para Proveedor
+                            ->exists();
+
+                        if ($existeProveedor) {
+                            $optionLabel .= ' <code>(EXISTE)</code>';
+                        }
+                        // ** FIN DE VERIFICACIÓN **
+                        */
+
+                        $empresasOptions[$optionKey] = $optionLabel;
+                    }
+                } catch (\Exception $e) {
+                    \Log::error('Error al conectar con la base de datos externa para la empresa ID ' . $empresa->id . ': ' . $e->getMessage());
+                    continue;
+                }
+            }
+
+            return $empresasOptions;
+        };
+
+        $empresasField = $useModalFields
+            ? Forms\Components\Select::make('empresas_proveedor')
+                ->label('Empresas para replicar')
+                ->multiple()
+                ->options($empresasOptions)
+                ->searchable()
+                ->preload()
+                ->default([])
+            : Forms\Components\CheckboxList::make('empresas_proveedor')
+                ->label('Empresas para replicar')
+                ->bulkToggleable(false)
+                ->default([])
+                ->options($empresasOptions);
+
+        $empresasField->afterStateHydrated(function (Get $get, Set $set, $state) {
+            if (!empty($state)) {
+                return;
+            }
+
+            $lineasNegocioIds = $get('lineasNegocio');
+            $ruc = $get('ruc');
+
+            if (empty($lineasNegocioIds)) {
+                return;
+            }
+
+            $seleccionados = [];
+
+            $empresas = Empresa::whereIn('linea_negocio_id', $lineasNegocioIds)
+                ->where('status_conexion', true)
+                ->get();
+
+            foreach ($empresas as $empresa) {
+                $connectionName = self::getExternalConnectionName($empresa->id);
+                if (!$connectionName) {
+                    continue;
+                }
+
+                try {
+                    $externalEmpresas = DB::connection($connectionName)
+                        ->table('saeempr')
+                        ->get();
+
+                    foreach ($externalEmpresas as $data_empresa) {
+                        $optionKey = $empresa->id . '-' . trim($data_empresa->empr_cod_empr);
+                        $empresaCode = trim($data_empresa->empr_cod_empr);
+
+                        // -------------------------------
+                        // VERIFICACIÓN DE EXISTENCIA
+                        // -------------------------------
+                        $existeProveedor = DB::connection($connectionName)
+                            ->table('saeclpv')
+                            ->where('clpv_cod_empr', $empresaCode)
+                            ->where('clpv_ruc_clpv', $ruc)
+                            ->where('clpv_clopv_clpv', 'PV') // proveedor
+                            ->exists();
+
+                        // Si existe → lo marcamos
+                        if ($existeProveedor) {
+                            $seleccionados[] = $optionKey;
+                        }
+                    }
+                } catch (\Exception $e) {
+                    \Log::error("Error en conexión externa empresa {$empresa->id}: " . $e->getMessage());
+                    continue;
+                }
+            }
+
+            // -------------------------------
+            // Setear los checkboxes marcados
+            // -------------------------------
+            $set('empresas_proveedor', $seleccionados);
+        });
+
+        if ($empresasField instanceof Forms\Components\CheckboxList) {
+            $empresasField->columns(2);
         }
 
         return [
@@ -567,125 +707,7 @@ class ProveedorResource extends Resource
 
                 Forms\Components\Section::make('Empresas')
                 ->schema([
-                    Forms\Components\CheckboxList::make('empresas_proveedor')
-                        ->label('Empresas para replicar')
-                        ->bulkToggleable(false)
-                        ->default([])
-                        ->options(function (Get $get) {
-                            $lineasNegocioIds = $get('lineasNegocio');
-                            $ruc = $get('ruc');
-
-                            if (empty($lineasNegocioIds)) {
-                                return [];
-                            }
-
-                            $empresas = Empresa::whereIn('linea_negocio_id', $lineasNegocioIds)
-                                ->where('status_conexion', true)->get();
-
-                            $empresasOptions = [];
-
-                            foreach ($empresas as $empresa) {
-                                $connectionName = self::getExternalConnectionName($empresa->id);
-                                if (!$connectionName) {
-                                    continue;
-                                }
-
-                                try {
-                                    $externalEmpresas = DB::connection($connectionName)
-                                        ->table('saeempr')
-                                        ->get();
-
-                                    foreach ($externalEmpresas as $data_empresa) {
-                                        $optionKey = $empresa->id . '-' . trim($data_empresa->empr_cod_empr);
-                                        $optionLabel = $empresa->nombre_empresa . ' - ' . $data_empresa->empr_nom_empr;
-
-                                        /*
-                                        // ** VERIFICACIÓN DE EXISTENCIA DEL PROVEEDOR **
-                                        $existeProveedor = DB::connection($connectionName)
-                                            ->table('saeclpv')
-                                            ->where('clpv_cod_empr', $amdgIdEmpresaCode)
-                                            ->where('clpv_ruc_clpv', $ruc)
-                                            ->where('clpv_clopv_clpv', 'PV') // 'PV' para Proveedor
-                                            ->exists();
-
-                                        if ($existeProveedor) {
-                                            $optionLabel .= ' <code>(EXISTE)</code>';
-                                        }
-                                        // ** FIN DE VERIFICACIÓN **
-                                        */
-
-                                        $empresasOptions[$optionKey] = $optionLabel;
-                                    }
-                                } catch (\Exception $e) {
-                                    \Log::error('Error al conectar con la base de datos externa para la empresa ID ' . $empresa->id . ': ' . $e->getMessage());
-                                    continue;
-                                }
-                            }
-
-                            return $empresasOptions;
-                        })
-                        ->afterStateHydrated(function (Get $get, Set $set, $state) {
-                            if (!empty($state)) {
-                                return;
-                            }
-
-                            $lineasNegocioIds = $get('lineasNegocio');
-                            $ruc = $get('ruc');
-
-                            if (empty($lineasNegocioIds)) {
-                                return;
-                            }
-
-                            $seleccionados = [];
-
-                            $empresas = Empresa::whereIn('linea_negocio_id', $lineasNegocioIds)
-                                ->where('status_conexion', true)
-                                ->get();
-
-                            foreach ($empresas as $empresa) {
-
-                                $connectionName = self::getExternalConnectionName($empresa->id);
-                                if (!$connectionName) {
-                                    continue;
-                                }
-
-                                try {
-                                    $externalEmpresas = DB::connection($connectionName)
-                                        ->table('saeempr')
-                                        ->get();
-
-                                    foreach ($externalEmpresas as $data_empresa) {
-
-                                        $optionKey = $empresa->id . '-' . trim($data_empresa->empr_cod_empr);
-                                        $empresaCode = trim($data_empresa->empr_cod_empr);
-
-                                        // -------------------------------
-                                        // VERIFICACIÓN DE EXISTENCIA
-                                        // -------------------------------
-                                        $existeProveedor = DB::connection($connectionName)
-                                            ->table('saeclpv')
-                                            ->where('clpv_cod_empr', $empresaCode)
-                                            ->where('clpv_ruc_clpv', $ruc)
-                                            ->where('clpv_clopv_clpv', 'PV') // proveedor
-                                            ->exists();
-
-                                        // Si existe → lo marcamos
-                                        if ($existeProveedor) {
-                                            $seleccionados[] = $optionKey;
-                                        }
-                                    }
-                                } catch (\Exception $e) {
-                                    \Log::error("Error en conexión externa empresa {$empresa->id}: " . $e->getMessage());
-                                    continue;
-                                }
-                            }
-
-                            // -------------------------------
-                            // Setear los checkboxes marcados
-                            // -------------------------------
-                            $set('empresas_proveedor', $seleccionados);
-                        })
-                        ->columns(2)
+                    $empresasField,
                 ])->columns(1),
         ];
     }
