@@ -325,7 +325,8 @@ class OrdenCompraResource extends Resource
                             ->modalHeading('Buscar Pedidos de Compra para Importar')
                             ->modalSubmitAction(false)
                             ->modalCancelAction(fn(StaticAction $action) => $action->label('Cerrar'))
-                            ->visible(fn(Get $get, $livewire) => $livewire instanceof Pages\CreateOrdenCompra
+                            ->visible(fn(Get $get, $livewire) => ($livewire instanceof Pages\CreateOrdenCompra
+                                || $livewire instanceof Pages\EditOrdenCompra)
                                 && !empty($get('id_empresa'))
                                 && !empty($get('amdg_id_empresa'))
                                 && !empty($get('amdg_id_sucursal')))

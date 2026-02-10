@@ -9,7 +9,7 @@
             <thead class="bg-gray-100 dark:bg-gray-800">
                 <tr>
                     <th class="p-2 w-12"></th>
-                    <th class="p-2 min-w-72">Bodega</th>
+                    <th class="p-2 w-40">Bodega</th>
                     <th class="p-2 w-28">Producto</th>
                     <th class="p-2 w-28">Código</th>
                     <th class="p-2 min-w-[28rem]">Descripción</th>
@@ -37,7 +37,7 @@
                         </td>
 
                         <td class="p-1">
-                            <select class="fi-select w-28" :key="`bodega-${row._key}-${bodegas.length}`"
+                            <select class="fi-select w-40" :key="`bodega-${row._key}-${bodegas.length}`"
                                 :value="String(row.id_bodega ?? '')" @focus="ensureBodegasLoaded()"
                                 @click="ensureBodegasLoaded()"
                                 @change="
