@@ -356,48 +356,54 @@ class BuscarPedidosCompra extends Component implements HasForms, HasTable
                     ->modalHeading('Detalles del Pedido')
                     ->modalSubmitAction(false)
                     ->modalCancelAction(fn(StaticAction $action) => $action->label('Cerrar')),
+                Tables\Actions\Action::make('importar_individual')
+                    ->label('Importar')
+                    ->icon('heroicon-o-arrow-down-tray')
+                    ->color('success')
+                    ->action(function (Model $record) {
+                        $this->importarPedidosSeleccionados(collect([$record]));
+                    }),
             ])
             ->bulkActions([
                 Tables\Actions\BulkAction::make('importar')
                     ->label('Importar Pedidos')
                     ->requiresConfirmation()
                     ->action(function (Collection $records, Tables\Actions\BulkAction $action) {
-
-                        if ($records->isEmpty()) {
-                            return;
-                        }
-
-                        $motivo = $records->first()->pedi_det_pedi;
-
-                        $this->dispatch(
-                            'pedidos_seleccionados',
-                            $records->pluck('pedi_cod_pedi')->toArray(),
-                            $this->id_empresa,
-                            $motivo
-                        );
-
-                        $pedidosActuales = $this->parsePedidosImportados($this->pedidos_importados);
-                        $pedidosSeleccionados = $records->pluck('pedi_cod_pedi')
-                            ->map(fn($pedido) => (int) ltrim((string) $pedido, '0'))
-                            ->filter(fn($pedido) => $pedido > 0)
-                            ->all();
-
-                        $pedidosUnicos = array_values(array_unique(array_merge($pedidosActuales, $pedidosSeleccionados)));
-                        $this->pedidos_importados = implode(', ', array_map(
-                            fn($pedido) => str_pad($pedido, 8, "0", STR_PAD_LEFT),
-                            $pedidosUnicos
-                        ));
-
-                        $this->resetTable();
-
-                        // 🔥 CERRAR MODAL 100% SEGURO
+                        $this->importarPedidosSeleccionados($records);
                         $action->cancel();
-                        //$this->dispatch('close-modal', id: 'importar_pedido');
-                        $this->dispatch('close-modal', id: 'mountedFormComponentAction');
-
-                        //$this->dispatch('close-modal', id: 'mountedAction');
                     })
             ]);
+    }
+
+
+    private function importarPedidosSeleccionados(Collection $records): void
+    {
+        if ($records->isEmpty()) {
+            return;
+        }
+
+        $motivo = $records->first()->pedi_det_pedi;
+
+        $this->dispatch(
+            'pedidos_seleccionados',
+            $records->pluck('pedi_cod_pedi')->toArray(),
+            $this->id_empresa,
+            $motivo
+        );
+
+        $pedidosActuales = $this->parsePedidosImportados($this->pedidos_importados);
+        $pedidosSeleccionados = $records->pluck('pedi_cod_pedi')
+            ->map(fn($pedido) => (int) ltrim((string) $pedido, '0'))
+            ->filter(fn($pedido) => $pedido > 0)
+            ->all();
+
+        $pedidosUnicos = array_values(array_unique(array_merge($pedidosActuales, $pedidosSeleccionados)));
+        $this->pedidos_importados = implode(', ', array_map(
+            fn($pedido) => str_pad($pedido, 8, "0", STR_PAD_LEFT),
+            $pedidosUnicos
+        ));
+
+        $this->resetTable();
     }
 
     public function getTableRecordKey(Model $record): string
