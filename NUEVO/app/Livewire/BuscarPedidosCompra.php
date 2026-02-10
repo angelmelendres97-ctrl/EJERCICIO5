@@ -33,6 +33,7 @@ class BuscarPedidosCompra extends Component implements HasForms, HasTable
     public ?string $pedidos_importados = null;
 
     public ?array $data = [];
+    public array $pedidos_seleccionados_acumulados = [];
 
     private function initializeForm(): void
     {
@@ -272,6 +273,89 @@ class BuscarPedidosCompra extends Component implements HasForms, HasTable
             ->all();
     }
 
+    private function getSeleccionadosAcumuladosCount(): int
+    {
+        return count($this->pedidos_seleccionados_acumulados);
+    }
+
+    public function toggleSeleccionAcumulada(int|string $pedidoCodigo): void
+    {
+        $pedido = (int) ltrim((string) $pedidoCodigo, '0');
+
+        if ($pedido <= 0) {
+            return;
+        }
+
+        if (in_array($pedido, $this->pedidos_seleccionados_acumulados, true)) {
+            $this->pedidos_seleccionados_acumulados = array_values(array_filter(
+                $this->pedidos_seleccionados_acumulados,
+                fn($item) => (int) $item !== $pedido
+            ));
+
+            Notification::make()
+                ->title('Pedido quitado de la selección acumulada')
+                ->body('Total acumulado: ' . $this->getSeleccionadosAcumuladosCount())
+                ->warning()
+                ->send();
+
+            return;
+        }
+
+        $this->pedidos_seleccionados_acumulados[] = $pedido;
+        $this->pedidos_seleccionados_acumulados = array_values(array_unique($this->pedidos_seleccionados_acumulados));
+
+        Notification::make()
+            ->title('Pedido agregado a la selección acumulada')
+            ->body('Total acumulado: ' . $this->getSeleccionadosAcumuladosCount())
+            ->success()
+            ->send();
+    }
+
+    public function limpiarSeleccionAcumulada(): void
+    {
+        $this->pedidos_seleccionados_acumulados = [];
+
+        Notification::make()
+            ->title('Selección acumulada limpiada')
+            ->success()
+            ->send();
+    }
+
+    public function importarSeleccionAcumulada(): void
+    {
+        $seleccionados = collect($this->pedidos_seleccionados_acumulados)
+            ->map(fn($pedido) => (int) $pedido)
+            ->filter(fn($pedido) => $pedido > 0)
+            ->unique()
+            ->values();
+
+        if ($seleccionados->isEmpty()) {
+            Notification::make()
+                ->title('No hay pedidos acumulados para importar')
+                ->warning()
+                ->send();
+
+            return;
+        }
+
+        $connectionName = OrdenCompraResource::getExternalConnectionName((int) $this->id_empresa);
+
+        if (!$connectionName) {
+            return;
+        }
+
+        $records = DB::connection($connectionName)
+            ->table('saepedi')
+            ->select('pedi_cod_pedi', 'pedi_det_pedi')
+            ->whereIn('pedi_cod_pedi', $seleccionados->all())
+            ->where('pedi_cod_empr', $this->amdg_id_empresa)
+            ->where('pedi_cod_sucu', $this->amdg_id_sucursal)
+            ->get();
+
+        $this->importarPedidosSeleccionados($records);
+        $this->pedidos_seleccionados_acumulados = [];
+    }
+
     public function table(Table $table): Table
     {
         return $table
@@ -312,6 +396,19 @@ class BuscarPedidosCompra extends Component implements HasForms, HasTable
                 Tables\Columns\TextColumn::make('pedi_res_pedi')->label('Responsable')->searchable()->sortable(),
                 Tables\Columns\TextColumn::make('pedi_det_pedi')->label('Motivo')->searchable()->wrap(),
                 Tables\Columns\TextColumn::make('pedi_fec_pedi')->label('Fecha Pedido')->date()->sortable(),
+            ])
+            ->headerActions([
+                Tables\Actions\Action::make('importar_acumulados')
+                    ->label(fn() => 'Importar seleccionados (' . $this->getSeleccionadosAcumuladosCount() . ')')
+                    ->icon('heroicon-o-arrow-down-tray')
+                    ->color('success')
+                    ->visible(fn() => $this->getSeleccionadosAcumuladosCount() > 0)
+                    ->action(fn() => $this->importarSeleccionAcumulada()),
+                Tables\Actions\Action::make('limpiar_acumulados')
+                    ->label('Limpiar selección')
+                    ->color('gray')
+                    ->visible(fn() => $this->getSeleccionadosAcumuladosCount() > 0)
+                    ->action(fn() => $this->limpiarSeleccionAcumulada()),
             ])
             ->actions([
                 Tables\Actions\Action::make('view_details')
@@ -356,48 +453,62 @@ class BuscarPedidosCompra extends Component implements HasForms, HasTable
                     ->modalHeading('Detalles del Pedido')
                     ->modalSubmitAction(false)
                     ->modalCancelAction(fn(StaticAction $action) => $action->label('Cerrar')),
-            ])
-            ->bulkActions([
-                Tables\Actions\BulkAction::make('importar')
-                    ->label('Importar Pedidos')
-                    ->requiresConfirmation()
-                    ->action(function (Collection $records, Tables\Actions\BulkAction $action) {
+                Tables\Actions\Action::make('acumular_pedido')
+                    ->label(function (Model $record) {
+                        $pedido = (int) ltrim((string) $record->pedi_cod_pedi, '0');
 
-                        if ($records->isEmpty()) {
-                            return;
-                        }
-
-                        $motivo = $records->first()->pedi_det_pedi;
-
-                        $this->dispatch(
-                            'pedidos_seleccionados',
-                            $records->pluck('pedi_cod_pedi')->toArray(),
-                            $this->id_empresa,
-                            $motivo
-                        );
-
-                        $pedidosActuales = $this->parsePedidosImportados($this->pedidos_importados);
-                        $pedidosSeleccionados = $records->pluck('pedi_cod_pedi')
-                            ->map(fn($pedido) => (int) ltrim((string) $pedido, '0'))
-                            ->filter(fn($pedido) => $pedido > 0)
-                            ->all();
-
-                        $pedidosUnicos = array_values(array_unique(array_merge($pedidosActuales, $pedidosSeleccionados)));
-                        $this->pedidos_importados = implode(', ', array_map(
-                            fn($pedido) => str_pad($pedido, 8, "0", STR_PAD_LEFT),
-                            $pedidosUnicos
-                        ));
-
-                        $this->resetTable();
-
-                        // 🔥 CERRAR MODAL 100% SEGURO
-                        $action->cancel();
-                        //$this->dispatch('close-modal', id: 'importar_pedido');
-                        $this->dispatch('close-modal', id: 'mountedFormComponentAction');
-
-                        //$this->dispatch('close-modal', id: 'mountedAction');
+                        return in_array($pedido, $this->pedidos_seleccionados_acumulados, true)
+                            ? 'Quitar selección'
+                            : 'Agregar selección';
                     })
+                    ->icon('heroicon-o-plus-circle')
+                    ->color(function (Model $record) {
+                        $pedido = (int) ltrim((string) $record->pedi_cod_pedi, '0');
+
+                        return in_array($pedido, $this->pedidos_seleccionados_acumulados, true) ? 'warning' : 'gray';
+                    })
+                    ->action(function (Model $record) {
+                        $this->toggleSeleccionAcumulada($record->pedi_cod_pedi);
+                    }),
+                Tables\Actions\Action::make('importar_individual')
+                    ->label('Importar')
+                    ->icon('heroicon-o-arrow-down-tray')
+                    ->color('success')
+                    ->action(function (Model $record) {
+                        $this->importarPedidosSeleccionados(collect([$record]));
+                    }),
             ]);
+    }
+
+
+    private function importarPedidosSeleccionados(Collection $records): void
+    {
+        if ($records->isEmpty()) {
+            return;
+        }
+
+        $motivo = $records->first()->pedi_det_pedi;
+
+        $this->dispatch(
+            'pedidos_seleccionados',
+            $records->pluck('pedi_cod_pedi')->toArray(),
+            $this->id_empresa,
+            $motivo
+        );
+
+        $pedidosActuales = $this->parsePedidosImportados($this->pedidos_importados);
+        $pedidosSeleccionados = $records->pluck('pedi_cod_pedi')
+            ->map(fn($pedido) => (int) ltrim((string) $pedido, '0'))
+            ->filter(fn($pedido) => $pedido > 0)
+            ->all();
+
+        $pedidosUnicos = array_values(array_unique(array_merge($pedidosActuales, $pedidosSeleccionados)));
+        $this->pedidos_importados = implode(', ', array_map(
+            fn($pedido) => str_pad($pedido, 8, "0", STR_PAD_LEFT),
+            $pedidosUnicos
+        ));
+
+        $this->resetTable();
     }
 
     public function getTableRecordKey(Model $record): string
