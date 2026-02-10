@@ -141,7 +141,7 @@ class EditOrdenCompra extends EditRecord
         $empresaId = $data['id_empresa'] ?? null;
         $amdgEmpresa = $data['amdg_id_empresa'] ?? null;
 
-        if (!$empresaId || !$amdgEmpresa) {
+        if (!$empresaId || !$amdgEmpresa || !$amdgSucursal) {
             return [];
         }
 
@@ -758,7 +758,7 @@ class EditOrdenCompra extends EditRecord
         $amdgEmpresa = $this->data['amdg_id_empresa'] ?? null;
         $amdgSucursal = $this->data['amdg_id_sucursal'] ?? null;
 
-        if (!$empresaId || !$amdgEmpresa) {
+        if (!$empresaId || !$amdgEmpresa || !$amdgSucursal) {
             return [];
         }
 
@@ -773,16 +773,23 @@ class EditOrdenCompra extends EditRecord
                 return [];
             }
 
-            $query = DB::connection($connectionName)->table('saebode');
+            $query = DB::connection($connectionName)
+                ->table('saebode')
+                ->join('saesubo', 'subo_cod_bode', '=', 'bode_cod_bode');
+
+            if ($schema->hasColumn('saesubo', 'subo_cod_empr')) {
+                $query->where('subo_cod_empr', $amdgEmpresa);
+            }
+            if ($schema->hasColumn('saesubo', 'subo_cod_sucu')) {
+                $query->where('subo_cod_sucu', $amdgSucursal);
+            }
             if ($schema->hasColumn('saebode', 'bode_cod_empr')) {
                 $query->where('bode_cod_empr', $amdgEmpresa);
-            }
-            if ($amdgSucursal && $schema->hasColumn('saebode', 'bode_cod_sucu')) {
-                $query->where('bode_cod_sucu', $amdgSucursal);
             }
 
             return $query
                 ->select(['bode_cod_bode', 'bode_nom_bode'])
+                ->distinct()
                 ->orderBy('bode_nom_bode')
                 ->limit(500)
                 ->get()
