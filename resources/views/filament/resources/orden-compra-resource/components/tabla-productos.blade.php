@@ -113,19 +113,19 @@
         </table>
     </div>
 
-    <div class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 p-4" x-show="productoModal.open"
+    <div class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 p-4 overflow-y-auto" x-show="productoModal.open"
         x-transition.opacity x-cloak>
-        <div class="w-full max-w-4xl rounded-xl bg-white shadow-xl dark:bg-gray-900" @click.outside="closeProductoModal()">
+        <div class="w-full max-w-4xl rounded-xl bg-white shadow-xl dark:bg-gray-900 max-h-[85vh] flex flex-col my-auto" @click.outside="closeProductoModal()">
             <div class="border-b p-4 dark:border-gray-700">
                 <h3 class="text-sm font-semibold">Seleccionar producto</h3>
                 <p class="text-xs text-gray-500">Bodega: <span x-text="productoModal.bodegaNombre || 'No seleccionada'"></span></p>
             </div>
 
-            <div class="p-4 space-y-3">
+            <div class="p-4 space-y-3 overflow-y-auto flex-1">
                 <input class="fi-input w-full" placeholder="Buscar por nombre o código..." x-model="productoModal.term"
                     @input.debounce.250ms="searchProductosModal()" @keydown.escape.stop="closeProductoModal()" />
 
-                <div class="max-h-80 overflow-y-auto rounded-lg border dark:border-gray-700">
+                <div class="max-h-[55vh] overflow-y-auto rounded-lg border dark:border-gray-700">
                     <template x-if="productoModal.loading">
                         <p class="px-3 py-2 text-xs text-gray-500">Cargando...</p>
                     </template>
@@ -202,6 +202,15 @@
                 const x = Number(v);
                 return Number.isFinite(x) ? x : 0;
             },
+            normalizeBodegaId(v) {
+                const raw = String(v ?? '').trim();
+                if (raw === '') return '';
+                const num = Number(raw);
+                return Number.isFinite(num) ? String(num) : raw.toUpperCase();
+            },
+            sameBodegaId(a, b) {
+                return this.normalizeBodegaId(a) === this.normalizeBodegaId(b);
+            },
             fmtRate(r) {
                 return String(Number(r).toFixed(2)).replace(/\.00$/, '').replace(/(\.[1-9])0$/, '$1')
             },
@@ -274,7 +283,7 @@
                     this.bodegasContext = `${ctx.empresa}-${ctx.amdgEmpresa}-${ctx.amdgSucursal}`;
                     this.rows.forEach((row) => {
                         if (!row.id_bodega) return;
-                        const selected = this.bodegas.find(b => String(b.id).trim() === String(row.id_bodega).trim());
+                        const selected = this.bodegas.find(b => this.sameBodegaId(b.id, row.id_bodega));
                         if (selected) {
                             row.id_bodega = String(selected.id);
                             row.bodega = selected.nombre;
@@ -307,7 +316,7 @@
             async openProductoModal(row) {
                 await this.ensureBodegasLoaded();
                 if (!row.id_bodega) return;
-                const selected = this.bodegas.find(b => String(b.id).trim() === String(row.id_bodega).trim());
+                const selected = this.bodegas.find(b => this.sameBodegaId(b.id, row.id_bodega));
                 this.productoModal = {
                     open: true,
                     rowKey: row._key,
@@ -344,7 +353,7 @@
                 row.producto_filtro = '';
                 row.showResultados = false;
                 row.highlightedIndex = -1;
-                const selected = this.bodegas.find(b => String(b.id).trim() === String(row.id_bodega).trim());
+                const selected = this.bodegas.find(b => this.sameBodegaId(b.id, row.id_bodega));
                 row.bodega = selected ? selected.nombre : '';
                 await this.searchProductos(row);
                 this.sync();
@@ -385,7 +394,7 @@
                 row.highlightedIndex = Math.max((row.highlightedIndex ?? 0) - 1, 0);
             },
             descripcionItem(row) {
-                if (row.es_auxiliar) return row.descripcion_auxiliar || row.producto_auxiliar || row.producto || '';
+                if (row.es_auxiliar) return row.producto_auxiliar || row.descripcion_auxiliar || row.producto || '';
                 return row.producto || '';
             },
             addRow() {
@@ -445,7 +454,7 @@
                     const base = Math.max(0, this.lineSubtotal(r) - this.n(r.descuento));
                     return {
                         ...r,
-                        id_bodega: this.n(r.id_bodega),
+                        id_bodega: r.id_bodega,
                         bodega: r.bodega || String(r.id_bodega || ''),
                         valor_impuesto: (base * (this.n(r.impuesto) / 100)).toFixed(6)
                     };

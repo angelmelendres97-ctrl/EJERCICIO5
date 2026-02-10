@@ -433,7 +433,7 @@ class EditOrdenCompra extends EditRecord
 
                 $auxiliarData = [
                     'codigo' => $detalle->dped_cod_auxiliar ?? null,
-                    'descripcion' => $detalle->dped_det_dped ?? null,
+                    'descripcion' => $descripcionAuxiliar ?: ($detalle->dped_det_dped ?? null),
                     'descripcion_auxiliar' => $descripcionAuxiliar,
                 ];
             }

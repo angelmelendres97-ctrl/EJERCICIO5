@@ -241,7 +241,7 @@ class CreateOrdenCompra extends CreateRecord
 
                     $auxiliarData = [
                         'codigo' => $detalle->dped_cod_auxiliar,
-                        'descripcion' => $detalle->dped_det_dped,
+                        'descripcion' => $descripcionAuxiliar ?: ($detalle->dped_det_dped ?? null),
                         'descripcion_auxiliar' => $descripcionAuxiliar,
                     ];
                 }
