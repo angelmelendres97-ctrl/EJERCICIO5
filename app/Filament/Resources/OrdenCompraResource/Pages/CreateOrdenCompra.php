@@ -39,6 +39,10 @@ class CreateOrdenCompra extends CreateRecord
     protected function mutateFormDataBeforeCreate(array $data): array
     {
         $data['id_usuario'] = $data['id_usuario'] ?? auth()->id();
+        if (!isset($data['detalles']) || !is_array($data['detalles'])) {
+            $data['detalles'] = $this->data['detalles'] ?? [];
+        }
+
         $newDetalles = [];
         if (isset($data['detalles']) && is_array($data['detalles'])) {
             foreach ($data['detalles'] as $detalle) {
