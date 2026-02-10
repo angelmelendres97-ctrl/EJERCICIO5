@@ -35,6 +35,7 @@ use Filament\Actions\StaticAction;
 use Illuminate\Database\Eloquent\Model; // ESTA LÍNEA ES NECESARIA
 use Filament\Notifications\Notification;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\HtmlString;
 
 class OrdenCompraResource extends Resource
 {
@@ -690,6 +691,38 @@ class OrdenCompraResource extends Resource
                         Forms\Components\Repeater::make('detalles')
                             ->schema([
                                 Grid::make(14)
+                                    ->extraAttributes([
+                                        'data-detalle-row' => 'true',
+                                        'x-data' => '{
+                                            subtotal: 0,
+                                            total: 0,
+                                            parse(value) {
+                                                const normalized = String(value ?? "").replace(/,/g, ".").trim();
+                                                const parsed = Number.parseFloat(normalized);
+                                                return Number.isFinite(parsed) ? parsed : 0;
+                                            },
+                                            format(value) {
+                                                return `$${Number(value || 0).toLocaleString("en-US", {
+                                                    minimumFractionDigits: 4,
+                                                    maximumFractionDigits: 4,
+                                                })}`;
+                                            },
+                                            recalculate() {
+                                                const cantidad = this.parse(this.$refs.cantidad?.value);
+                                                const costo = this.parse(this.$refs.costo?.value);
+                                                const descuento = this.parse(this.$refs.descuento?.value);
+                                                const impuesto = this.parse(this.$refs.impuesto?.value);
+
+                                                this.subtotal = cantidad * costo;
+                                                const iva = this.subtotal * (impuesto / 100);
+                                                this.total = (this.subtotal + iva) - descuento;
+                                                window.dispatchEvent(new CustomEvent("oc-detalles-updated"));
+                                            },
+                                        }',
+                                        'x-init' => '$nextTick(() => recalculate())',
+                                        'x-on:input.debounce.0ms' => 'recalculate()',
+                                        'x-on:change' => 'recalculate()',
+                                    ])
                                     ->schema([
                                         Forms\Components\Hidden::make('es_auxiliar'),
                                         Forms\Components\Hidden::make('es_servicio'),
@@ -962,8 +995,13 @@ class OrdenCompraResource extends Resource
                                         Forms\Components\TextInput::make('cantidad')
                                             ->numeric()
                                             ->required()
-                                            ->live(debounce: 300)
+                                            ->live(onBlur: true)
                                             ->default(1)
+                                            ->afterStateUpdated(fn(Get $get, Set $set) => self::syncTotales($get, $set))
+                                            ->extraInputAttributes([
+                                                'x-ref' => 'cantidad',
+                                                'data-campo' => 'cantidad',
+                                            ])
                                             ->helperText(fn(Get $get) => filled($get('unidad')) ? 'Unidad: ' . $get('unidad') : null)
                                             ->columnSpan(['default' => 12, 'lg' => 1]),
 
@@ -971,21 +1009,11 @@ class OrdenCompraResource extends Resource
                                             ->label('Costo')
                                             ->required()
                                             ->prefix('$')
-                                            ->live(debounce: 1200)
+                                            ->live(onBlur: true)
                                             ->extraInputAttributes([
+                                                'x-ref' => 'costo',
+                                                'data-campo' => 'costo',
                                                 'inputmode' => 'decimal',
-                                                'oninput' => "let v=this.value
-        .replace(/[^0-9.]/g,'')          // solo números y punto
-        .replace(/(\\..*)\\./g,'$1');    // solo 1 punto
-
-        // limitar a 6 decimales
-        if (v.includes('.')) {
-            const parts = v.split('.');
-            parts[0] = parts[0].replace(/^0+(?=\\d)/,''); // opcional: quita ceros a la izquierda
-            parts[1] = (parts[1] || '').slice(0,6);
-            v = parts[0] + '.' + parts[1];
-        }
-        this.value = v;",
                                             ])
                                             ->rule('regex:/^\d+(\.\d{0,6})?$/')
                                             ->rule('regex:/^\d+(\.\d{0,6})?$/') // valida backend
@@ -998,21 +1026,11 @@ class OrdenCompraResource extends Resource
                                             ->required()
                                             ->default(0)
                                             ->prefix('$')
-                                            ->live(debounce: 600)
+                                            ->live(onBlur: true)
                                             ->extraInputAttributes([
+                                                'x-ref' => 'descuento',
+                                                'data-campo' => 'descuento',
                                                 'inputmode' => 'decimal',
-                                                'oninput' => "let v=this.value
-        .replace(/[^0-9.]/g,'')          // solo números y punto
-        .replace(/(\\..*)\\./g,'$1');    // solo 1 punto
-
-        // limitar a 6 decimales
-        if (v.includes('.')) {
-            const parts = v.split('.');
-            parts[0] = parts[0].replace(/^0+(?=\\d)/,''); // opcional: quita ceros a la izquierda
-            parts[1] = (parts[1] || '').slice(0,6);
-            v = parts[0] + '.' + parts[1];
-        }
-        this.value = v;",
                                             ])
                                             ->rule('regex:/^\d+(\.\d{0,6})?$/')
                                             ->rule('regex:/^\d+(\.\d{0,6})?$/')
@@ -1026,14 +1044,19 @@ class OrdenCompraResource extends Resource
                                                 $costo = floatval($get('costo'));
                                                 $subtotal = $cantidad * $costo;
 
-                                                return '$' . number_format($subtotal, 4, '.', '');
+                                                return new HtmlString('<span x-text="format(subtotal)">$' . number_format($subtotal, 4, '.', ',') . '</span>');
                                             })
                                             ->columnSpan(['default' => 12, 'lg' => 1]),
 
                                         Forms\Components\Select::make('impuesto')
                                             ->options(['0' => '0%', '5' => '5%', '8' => '8%', '15' => '15%', '18' => '18%'])
                                             ->required()
-                                            ->live()
+                                            ->live(onBlur: true)
+                                            ->afterStateUpdated(fn(Get $get, Set $set) => self::syncTotales($get, $set))
+                                            ->extraInputAttributes([
+                                                'x-ref' => 'impuesto',
+                                                'data-campo' => 'impuesto',
+                                            ])
                                             ->columnSpan(['default' => 12, 'lg' => 1]),
 
                                         /*    Forms\Components\Placeholder::make('valor_iva')
@@ -1065,7 +1088,7 @@ class OrdenCompraResource extends Resource
                                                 $valorIva = $subtotal * ($iva / 100);
                                                 $total = ($subtotal + $valorIva) - $descuento;
 
-                                                return '$' . number_format($total, 4, '.', '');
+                                                return new HtmlString('<span x-text="format(total)">$' . number_format($total, 4, '.', ',') . '</span>');
                                             })
                                             ->columnSpan(['default' => 12, 'lg' => 2]),
                                     ]),
