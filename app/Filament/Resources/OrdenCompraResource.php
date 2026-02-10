@@ -35,6 +35,7 @@ use Filament\Actions\StaticAction;
 use Illuminate\Database\Eloquent\Model; // ESTA LÍNEA ES NECESARIA
 use Filament\Notifications\Notification;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\HtmlString;
 
 class OrdenCompraResource extends Resource
 {
@@ -962,8 +963,12 @@ class OrdenCompraResource extends Resource
                                         Forms\Components\TextInput::make('cantidad')
                                             ->numeric()
                                             ->required()
-                                            ->live(debounce: 300)
+                                            ->live(onBlur: true)
                                             ->default(1)
+                                            ->extraInputAttributes([
+                                                'data-oc-field' => 'cantidad',
+                                                'oninput' => 'window.ocActualizarFilaCompra?.(this)',
+                                            ])
                                             ->helperText(fn(Get $get) => filled($get('unidad')) ? 'Unidad: ' . $get('unidad') : null)
                                             ->columnSpan(['default' => 12, 'lg' => 1]),
 
@@ -971,8 +976,9 @@ class OrdenCompraResource extends Resource
                                             ->label('Costo')
                                             ->required()
                                             ->prefix('$')
-                                            ->live(debounce: 1200)
+                                            ->live(onBlur: true)
                                             ->extraInputAttributes([
+                                                'data-oc-field' => 'costo',
                                                 'inputmode' => 'decimal',
                                                 'oninput' => "let v=this.value
         .replace(/[^0-9.]/g,'')          // solo números y punto
@@ -985,7 +991,8 @@ class OrdenCompraResource extends Resource
             parts[1] = (parts[1] || '').slice(0,6);
             v = parts[0] + '.' + parts[1];
         }
-        this.value = v;",
+        this.value = v;
+        window.ocActualizarFilaCompra?.(this);",
                                             ])
                                             ->rule('regex:/^\d+(\.\d{0,6})?$/')
                                             ->rule('regex:/^\d+(\.\d{0,6})?$/') // valida backend
@@ -998,8 +1005,9 @@ class OrdenCompraResource extends Resource
                                             ->required()
                                             ->default(0)
                                             ->prefix('$')
-                                            ->live(debounce: 600)
+                                            ->live(onBlur: true)
                                             ->extraInputAttributes([
+                                                'data-oc-field' => 'descuento',
                                                 'inputmode' => 'decimal',
                                                 'oninput' => "let v=this.value
         .replace(/[^0-9.]/g,'')          // solo números y punto
@@ -1012,7 +1020,8 @@ class OrdenCompraResource extends Resource
             parts[1] = (parts[1] || '').slice(0,6);
             v = parts[0] + '.' + parts[1];
         }
-        this.value = v;",
+        this.value = v;
+        window.ocActualizarFilaCompra?.(this);",
                                             ])
                                             ->rule('regex:/^\d+(\.\d{0,6})?$/')
                                             ->rule('regex:/^\d+(\.\d{0,6})?$/')
@@ -1026,14 +1035,18 @@ class OrdenCompraResource extends Resource
                                                 $costo = floatval($get('costo'));
                                                 $subtotal = $cantidad * $costo;
 
-                                                return '$' . number_format($subtotal, 4, '.', '');
+                                                return new HtmlString('<span data-oc-subtotal-display>$' . number_format($subtotal, 4, '.', '') . '</span>');
                                             })
                                             ->columnSpan(['default' => 12, 'lg' => 1]),
 
                                         Forms\Components\Select::make('impuesto')
                                             ->options(['0' => '0%', '5' => '5%', '8' => '8%', '15' => '15%', '18' => '18%'])
                                             ->required()
-                                            ->live()
+                                            ->live(onBlur: true)
+                                            ->extraInputAttributes([
+                                                'data-oc-field' => 'impuesto',
+                                                'onchange' => 'window.ocActualizarFilaCompra?.(this)',
+                                            ])
                                             ->columnSpan(['default' => 12, 'lg' => 1]),
 
                                         /*    Forms\Components\Placeholder::make('valor_iva')
@@ -1065,7 +1078,7 @@ class OrdenCompraResource extends Resource
                                                 $valorIva = $subtotal * ($iva / 100);
                                                 $total = ($subtotal + $valorIva) - $descuento;
 
-                                                return '$' . number_format($total, 4, '.', '');
+                                                return new HtmlString('<span data-oc-total-display>$' . number_format($total, 4, '.', '') . '</span>');
                                             })
                                             ->columnSpan(['default' => 12, 'lg' => 2]),
                                     ]),
@@ -1075,6 +1088,9 @@ class OrdenCompraResource extends Resource
                             ->addActionLabel('Agregar Producto')
                             ->afterStateUpdated(fn(Get $get, Set $set) => self::syncTotales($get, $set))
                             ->live(),
+
+                        Forms\Components\View::make('filament.resources.orden-compra-resource.components.fast-repeater-calc')
+                            ->dehydrated(false),
                     ]),
 
                 // Hidden fields for totals
