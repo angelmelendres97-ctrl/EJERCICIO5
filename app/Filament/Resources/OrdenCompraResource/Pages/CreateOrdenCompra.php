@@ -73,10 +73,45 @@ class CreateOrdenCompra extends CreateRecord
 
             $record = static::getModel()::create($data);
 
+            $this->syncDetalleRows($record, $data['detalles'] ?? []);
+
             OrdenCompraSyncService::sincronizar($record, $data);
 
             return $record;
         });
+    }
+
+    private function syncDetalleRows(Model $record, array $detalles): void
+    {
+        $record->detalles()->delete();
+
+        $payload = collect($detalles)
+            ->map(function (array $detalle) use ($record) {
+                return [
+                    'id_orden_compra' => $record->id,
+                    'pedido_codigo' => $detalle['pedido_codigo'] ?? null,
+                    'pedido_detalle_id' => $detalle['pedido_detalle_id'] ?? null,
+                    'id_bodega' => $detalle['id_bodega'] ?? null,
+                    'codigo_producto' => $detalle['codigo_producto'] ?? null,
+                    'producto' => $detalle['producto'] ?? null,
+                    'cantidad' => (float) ($detalle['cantidad'] ?? 0),
+                    'costo' => (float) ($detalle['costo'] ?? 0),
+                    'descuento' => (float) ($detalle['descuento'] ?? 0),
+                    'impuesto' => (float) ($detalle['impuesto'] ?? 0),
+                    'valor_impuesto' => (float) ($detalle['valor_impuesto'] ?? 0),
+                    'detalle' => $detalle['detalle'] ?? null,
+                    'unidad' => $detalle['unidad'] ?? null,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ];
+            })
+            ->filter(fn(array $row) => !empty($row['producto']) || !empty($row['codigo_producto']))
+            ->values()
+            ->all();
+
+        if (!empty($payload)) {
+            $record->detalles()->insert($payload);
+        }
     }
 
 
@@ -280,6 +315,8 @@ class CreateOrdenCompra extends CreateRecord
             $this->data['total_descuento'] = number_format($descuentoGeneral, 2, '.', '');
             $this->data['total_impuesto'] = number_format($impuestoGeneral, 2, '.', '');
             $this->data['total'] = number_format($totalGeneral, 2, '.', '');
+
+            $this->dispatch('oc-detalles-sync', detalles: $this->data['detalles']);
         }
 
         $this->applySolicitadoPor($connectionName, $pedidosUnicos);
