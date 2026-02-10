@@ -113,19 +113,22 @@
         </table>
     </div>
 
-    <div class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 p-4 overflow-y-auto" x-show="productoModal.open"
-        x-transition.opacity x-cloak>
-        <div class="w-full max-w-4xl rounded-xl bg-white shadow-xl dark:bg-gray-900 max-h-[85vh] flex flex-col my-auto" @click.outside="closeProductoModal()">
+    <div class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 p-4 overflow-y-auto"
+        x-show="productoModal.open" x-transition.opacity x-cloak>
+        <div class="w-full max-w-4xl rounded-xl bg-white shadow-xl dark:bg-gray-900 max-h-[70vh] flex flex-col my-auto"
+            @click.outside="closeProductoModal()">
             <div class="border-b p-4 dark:border-gray-700">
                 <h3 class="text-sm font-semibold">Seleccionar producto</h3>
-                <p class="text-xs text-gray-500">Bodega: <span x-text="productoModal.bodegaNombre || 'No seleccionada'"></span></p>
+                <p class="text-xs text-gray-500">Bodega: <span
+                        x-text="productoModal.bodegaNombre || 'No seleccionada'"></span></p>
             </div>
 
             <div class="p-4 space-y-3 overflow-y-auto flex-1">
-                <input class="fi-input w-full" placeholder="Buscar por nombre o código..." x-model="productoModal.term"
-                    @input.debounce.250ms="searchProductosModal()" @keydown.escape.stop="closeProductoModal()" />
+                <input class="fi-input w-full" placeholder="Buscar por nombre o código..."
+                    x-model="productoModal.term" @input.debounce.250ms="searchProductosModal()"
+                    @keydown.escape.stop="closeProductoModal()" />
 
-                <div class="max-h-[55vh] overflow-y-auto rounded-lg border dark:border-gray-700">
+                <div class="max-h-[38vh] overflow-y-auto rounded-lg border dark:border-gray-700">
                     <template x-if="productoModal.loading">
                         <p class="px-3 py-2 text-xs text-gray-500">Cargando...</p>
                     </template>
@@ -135,7 +138,8 @@
                     </template>
 
                     <template x-for="p in (productoModal.results || [])" :key="`${p.codigo}-${p.label}`">
-                        <button type="button" class="block w-full border-b px-3 py-2 text-left text-xs hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"
+                        <button type="button"
+                            class="block w-full border-b px-3 py-2 text-left text-xs hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"
                             @click="selectProductoFromModal(p)">
                             <span x-text="p.label"></span>
                         </button>
@@ -205,7 +209,13 @@
             normalizeBodegaId(v) {
                 const raw = String(v ?? '').trim();
                 if (raw === '') return '';
-                const num = Number(raw);
+
+                // si viene "0003" -> "3"
+                const noZeros = raw.replace(/^0+/, '');
+                const candidate = noZeros === '' ? '0' : noZeros;
+
+                // si es numérico, lo dejamos numérico normalizado
+                const num = Number(candidate);
                 return Number.isFinite(num) ? String(num) : raw.toUpperCase();
             },
             sameBodegaId(a, b) {
@@ -237,7 +247,7 @@
                     detalle: row.detalle ?? null,
                     producto_auxiliar: row.producto_auxiliar ?? '',
                     producto_servicio: row.producto_servicio ?? '',
-                    id_bodega: String(row.id_bodega ?? ''),
+                    id_bodega: this.normalizeBodegaId(row.id_bodega ?? ''),
                     bodega: row.bodega ?? '',
                     producto_filtro: '',
                     showResultados: false,
@@ -286,7 +296,7 @@
                         const selected = this.bodegas.find(b => this.sameBodegaId(b.id, row.id_bodega));
                         if (selected) {
                             row.id_bodega = String(selected.id);
-                            row.bodega = selected.nombre;
+                            row.bodega = selected.id ? selected.nombre : String(row.id_bodega);
                         }
                     });
                 } catch (_) {
@@ -305,7 +315,8 @@
                 }
                 const token = (this.latestSearchToken[row._key] || 0) + 1;
                 this.latestSearchToken[row._key] = token;
-                const list = await this.livewire.call('searchProductosPorBodega', row.id_bodega, row.producto_filtro || '');
+                const list = await this.livewire.call('searchProductosPorBodega', row.id_bodega, row
+                    .producto_filtro || '');
                 if (this.latestSearchToken[row._key] !== token) {
                     return;
                 }
