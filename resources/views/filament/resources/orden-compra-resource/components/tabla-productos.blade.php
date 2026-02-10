@@ -1,0 +1,187 @@
+@php
+    $rows = $detalles ?? [];
+@endphp
+
+<div x-data="ordenCompraProductosTable(@js($rows))" x-init="init()" x-on:oc-detalles-sync.window="if ($event.detail?.detalles) mergeServerRows($event.detail.detalles)" class="space-y-4">
+    <div class="overflow-x-auto border rounded-xl border-gray-200 dark:border-gray-700">
+        <table class="w-full text-xs">
+            <thead class="bg-gray-100 dark:bg-gray-800">
+                <tr>
+                    <th class="p-2 w-10"></th>
+                    <th class="p-2 min-w-44">Bodega</th>
+                    <th class="p-2 min-w-56">Producto</th>
+                    <th class="p-2">Código</th>
+                    <th class="p-2 min-w-64">Descripción</th>
+                    <th class="p-2">Unidad</th>
+                    <th class="p-2">Cant.</th>
+                    <th class="p-2">Costo</th>
+                    <th class="p-2">Desc.</th>
+                    <th class="p-2">IVA %</th>
+                    <th class="p-2 text-right">Subtotal</th>
+                    <th class="p-2 text-right">Total</th>
+                </tr>
+            </thead>
+            <tbody>
+                <template x-if="rows.length === 0">
+                    <tr><td colspan="12" class="p-4 text-center text-gray-500">Sin productos</td></tr>
+                </template>
+
+                <template x-for="(row, idx) in rows" :key="row._key">
+                    <tr class="border-t border-gray-200 dark:border-gray-700 align-top">
+                        <td class="p-1 text-center">
+                            <button type="button" class="text-danger-600" @click="removeRow(idx)">✕</button>
+                        </td>
+
+                        <td class="p-1">
+                            <select class="fi-select w-full" x-model="row.id_bodega" @change="onBodegaChange(row)">
+                                <option value="">Seleccione</option>
+                                <template x-for="b in bodegas" :key="b.id">
+                                    <option :value="String(b.id)" x-text="b.nombre"></option>
+                                </template>
+                            </select>
+                        </td>
+
+                        <td class="p-1">
+                            <input class="fi-input mb-1" placeholder="Buscar producto..." x-model="row.producto_filtro" @input.debounce.250ms="searchProductos(row)">
+                            <select class="fi-select w-full" x-model="row.codigo_producto" @change="onProductoChange(row)">
+                                <option value="">Seleccione</option>
+                                <template x-for="p in (productosPorFila[row._key] || [])" :key="`${p.codigo}-${p.label}`">
+                                    <option :value="p.codigo" x-text="p.label"></option>
+                                </template>
+                            </select>
+                        </td>
+
+                        <td class="p-1"><input class="fi-input w-28" x-model="row.codigo_producto" readonly></td>
+                        <td class="p-1"><input class="fi-input w-full" :value="descripcionItem(row)" readonly></td>
+                        <td class="p-1"><input class="fi-input w-20" x-model="row.unidad" readonly></td>
+
+                        <td class="p-1"><input type="number" step="0.000001" class="fi-input w-24" x-model="row.cantidad" @input="sync()"></td>
+                        <td class="p-1"><input type="number" step="0.000001" class="fi-input w-24" x-model="row.costo" @input="sync()"></td>
+                        <td class="p-1"><input type="number" step="0.000001" class="fi-input w-24" x-model="row.descuento" @input="sync()"></td>
+                        <td class="p-1">
+                            <select class="fi-select w-20" x-model="row.impuesto" @change="sync()">
+                                <option value="0">0%</option><option value="5">5%</option><option value="8">8%</option><option value="15">15%</option><option value="18">18%</option>
+                            </select>
+                        </td>
+
+                        <td class="p-1 text-right" x-text="money4(lineSubtotal(row))"></td>
+                        <td class="p-1 text-right font-semibold" x-text="money4(lineTotal(row))"></td>
+                    </tr>
+                </template>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="flex justify-end">
+        <button type="button" class="fi-btn fi-btn-size-sm fi-btn-color-primary" @click="addRow()">Agregar producto</button>
+    </div>
+
+    <div class="ml-auto w-full max-w-md border rounded-xl border-gray-200 dark:border-gray-700 p-3">
+        <table class="w-full text-sm">
+            <tr><th class="text-right pr-2">Subtotal</th><td class="text-right" x-text="money2(summary.subtotal)"></td></tr>
+            <tr><th class="text-right pr-2">Total Descuento</th><td class="text-right" x-text="money2(summary.descuento)"></td></tr>
+            <template x-for="t in summary.tarifas" :key="`t-${t}`">
+                <tr>
+                    <th class="text-right pr-2" x-text="`Tarifa ${fmtRate(t)} %`"></th>
+                    <td class="text-right" x-text="money2(summary.basePorIva[t] || 0)"></td>
+                </tr>
+            </template>
+            <template x-for="t in summary.tarifas" :key="`i-${t}`">
+                <tr>
+                    <th class="text-right pr-2" x-text="`IVA ${fmtRate(t)} %`"></th>
+                    <td class="text-right" x-text="money2(summary.ivaPorIva[t] || 0)"></td>
+                </tr>
+            </template>
+            <tr class="border-t border-gray-200 dark:border-gray-700"><th class="text-right pr-2 text-primary-600">Total</th><td class="text-right text-primary-600 font-bold" x-text="money2(summary.total)"></td></tr>
+        </table>
+    </div>
+</div>
+
+<script>
+window.ordenCompraProductosTable = window.ordenCompraProductosTable || function (initialRows) {
+    return {
+        rows: [], bodegas: [], productosPorFila: {},
+        summary: { subtotal: 0, descuento: 0, impuesto: 0, total: 0, basePorIva: {}, ivaPorIva: {}, tarifas: [] },
+        init() { this.applyServerRows(initialRows || []); this.loadBodegas(); },
+        get livewire() { const id = this.$root.closest('[wire\\:id]')?.getAttribute('wire:id'); return id && window.Livewire ? window.Livewire.find(id) : null; },
+        n(v) { const x = Number(v); return Number.isFinite(x) ? x : 0; },
+        fmtRate(r){return String(Number(r).toFixed(2)).replace(/\.00$/,'').replace(/(\.[1-9])0$/,'$1')},
+        money2(v){return '$ '+this.n(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});},
+        money4(v){return '$ '+this.n(v).toLocaleString('en-US',{minimumFractionDigits:4,maximumFractionDigits:4});},
+        normalizeRow(row){
+            return {
+                _key: row._key || (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()+Math.random())),
+                pedido_codigo: row.pedido_codigo ?? null,
+                pedido_detalle_id: row.pedido_detalle_id ?? null,
+                es_auxiliar: !!row.es_auxiliar,
+                es_servicio: !!row.es_servicio,
+                detalle: row.detalle ?? null,
+                producto_auxiliar: row.producto_auxiliar ?? '',
+                producto_servicio: row.producto_servicio ?? '',
+                id_bodega: String(row.id_bodega ?? ''),
+                bodega: row.bodega ?? '',
+                producto_filtro: '',
+                codigo_producto: row.codigo_producto ?? '',
+                producto: row.producto ?? '',
+                unidad: row.unidad ?? 'UN',
+                cantidad: this.n(row.cantidad ?? 1),
+                costo: this.n(row.costo ?? 0),
+                descuento: this.n(row.descuento ?? 0),
+                impuesto: String(row.impuesto ?? '0'),
+            }
+        },
+        rowImportKey(r){ return r.pedido_codigo && r.pedido_detalle_id ? `p:${r.pedido_codigo}:${r.pedido_detalle_id}` : null; },
+        applyServerRows(serverRows){ this.rows=(serverRows||[]).map(r=>this.normalizeRow(r)); this.rows.forEach(r=>this.searchProductos(r)); this.sync(); },
+        mergeServerRows(serverRows){
+            const incoming=(serverRows||[]).map(r=>this.normalizeRow(r));
+            const existingKeys = new Set(this.rows.map(r=>this.rowImportKey(r)).filter(Boolean));
+            for(const r of incoming){
+                const k=this.rowImportKey(r);
+                if(!k || !existingKeys.has(k)){ this.rows.push(r); if(k) existingKeys.add(k); }
+            }
+            this.rows.forEach(r=>this.searchProductos(r));
+            this.sync();
+        },
+        async loadBodegas(){ if(this.bodegas.length || !this.livewire) return; try{ this.bodegas = await this.livewire.call('fetchBodegas'); }catch(_){ this.bodegas=[]; } },
+        async searchProductos(row){ if(!this.livewire || !row.id_bodega) return; const list = await this.livewire.call('searchProductosPorBodega', row.id_bodega, row.producto_filtro || ''); this.productosPorFila[row._key]=list||[]; },
+        async onBodegaChange(row){ row.codigo_producto=''; row.producto=''; row.unidad='UN'; row.producto_filtro=''; await this.searchProductos(row); this.sync(); },
+        onProductoChange(row){
+            const p=(this.productosPorFila[row._key]||[]).find(x=>x.codigo===row.codigo_producto);
+            if(!p){ this.sync(); return; }
+            row.producto=p.nombre;
+            row.costo=this.n(p.costo);
+            row.impuesto=String(Math.round(this.n(p.impuesto)));
+            row.unidad=p.unidad || row.unidad || 'UN';
+            this.sync();
+        },
+        descripcionItem(row){ if(row.es_auxiliar) return row.producto_auxiliar || row.producto || ''; return row.producto || ''; },
+        addRow(){ this.rows.push(this.normalizeRow({})); this.sync(); },
+        removeRow(i){ this.rows.splice(i,1); this.sync(); },
+        lineSubtotal(r){ return this.n(r.cantidad)*this.n(r.costo); },
+        lineTotal(r){ const base=Math.max(0,this.lineSubtotal(r)-this.n(r.descuento)); return base + (base*(this.n(r.impuesto)/100)); },
+        sync(){
+            const basePorIva={},ivaPorIva={};
+            let subtotal=0,descuento=0,impuesto=0;
+            for(const r of this.rows){
+                const rate=this.n(r.impuesto); const k=String(rate);
+                const base=this.lineSubtotal(r); const desc=this.n(r.descuento); const net=Math.max(0,base-desc); const iva=net*(rate/100);
+                subtotal+=base; descuento+=desc; impuesto+=iva;
+                basePorIva[k]=(basePorIva[k]||0)+base; ivaPorIva[k]=(ivaPorIva[k]||0)+iva;
+            }
+            const present=Object.keys(basePorIva).filter(k=>Math.round((basePorIva[k]||0)*1e6)/1e6>0).map(Number);
+            const preferred=[15,0,5,8,18];
+            const tarifas=[...preferred.filter(x=>present.includes(x)),...present.filter(x=>!preferred.includes(x)).sort((a,b)=>a-b)];
+            this.summary={subtotal,descuento,impuesto,total:subtotal-descuento+impuesto,basePorIva,ivaPorIva,tarifas};
+
+            const payload=this.rows.map(({_key,producto_filtro,...r})=>{ const base=Math.max(0,this.lineSubtotal(r)-this.n(r.descuento)); return {...r,id_bodega:this.n(r.id_bodega),bodega:r.bodega||String(r.id_bodega||''),valor_impuesto:(base*(this.n(r.impuesto)/100)).toFixed(6)}; });
+            if(!this.livewire) return;
+            this.livewire.set('data.detalles',payload,false);
+            this.livewire.set('data.subtotal',subtotal.toFixed(2),false);
+            this.livewire.set('data.total_descuento',descuento.toFixed(2),false);
+            this.livewire.set('data.total_impuesto',impuesto.toFixed(2),false);
+            this.livewire.set('data.total',(subtotal-descuento+impuesto).toFixed(2),false);
+            this.livewire.set('data.resumen_totales',this.summary,false);
+        }
+    }
+}
+</script>
