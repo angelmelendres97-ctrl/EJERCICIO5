@@ -48,11 +48,11 @@
 
                         <td class="p-1">
                             <input class="fi-input w-28 cursor-pointer" placeholder="Seleccionar producto..."
-                                x-model="row.producto_filtro" readonly @click="openProductoModal(row)" />
+                                :value="productoEtiqueta(row)" readonly @click="openProductoModal(row)" />
                         </td>
 
                         <td class="p-1"><input class="fi-input w-28" x-model="row.codigo_producto" readonly></td>
-                        <td class="p-1"><input class="fi-input w-64" :value="descripcionItem(row)" readonly></td>
+                        <td class="p-1"><input class="fi-input w-64" :value="detalleEtiqueta(row)" readonly></td>
                         <td class="p-1"><input class="fi-input w-20" x-model="row.unidad" readonly></td>
 
                         <td class="p-1"><input type="number" step="0.000001" class="fi-input w-20"
@@ -210,13 +210,22 @@
                 const raw = String(v ?? '').trim();
                 if (raw === '') return '';
 
-                // si viene "0003" -> "3"
-                const noZeros = raw.replace(/^0+/, '');
-                const candidate = noZeros === '' ? '0' : noZeros;
+                const codeInParens = raw.match(/\((\d+)\)\s*$/);
+                if (codeInParens) {
+                    return String(Number(codeInParens[1]));
+                }
 
-                // si es numérico, lo dejamos numérico normalizado
-                const num = Number(candidate);
-                return Number.isFinite(num) ? String(num) : raw.toUpperCase();
+                const onlyDigits = raw.match(/^\d+$/);
+                if (onlyDigits) {
+                    return String(Number(raw));
+                }
+
+                const trailingDigits = raw.match(/(\d+)$/);
+                if (trailingDigits) {
+                    return String(Number(trailingDigits[1]));
+                }
+
+                return raw.toUpperCase();
             },
             sameBodegaId(a, b) {
                 return this.normalizeBodegaId(a) === this.normalizeBodegaId(b);
@@ -247,7 +256,7 @@
                     detalle: row.detalle ?? null,
                     producto_auxiliar: row.producto_auxiliar ?? '',
                     producto_servicio: row.producto_servicio ?? '',
-                    id_bodega: this.normalizeBodegaId(row.id_bodega ?? ''),
+                    id_bodega: this.normalizeBodegaId(row.id_bodega ?? row.bodega ?? ''),
                     bodega: row.bodega ?? '',
                     producto_filtro: '',
                     showResultados: false,
@@ -404,7 +413,13 @@
                 row.showResultados = true;
                 row.highlightedIndex = Math.max((row.highlightedIndex ?? 0) - 1, 0);
             },
-            descripcionItem(row) {
+            productoEtiqueta(row) {
+                if (row.es_auxiliar) return row.descripcion_auxiliar || row.producto || '';
+                if (row.es_servicio) return row.producto || '';
+                return row.producto || '';
+            },
+            detalleEtiqueta(row) {
+                if (row.detalle_pedido) return row.detalle_pedido;
                 if (row.es_auxiliar) return row.producto_auxiliar || row.descripcion_auxiliar || row.producto || '';
                 return row.producto || '';
             },
