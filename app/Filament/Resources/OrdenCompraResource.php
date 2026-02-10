@@ -709,6 +709,7 @@ class OrdenCompraResource extends Resource
                             ->schema([
                                 Grid::make(14)
                                     ->extraAttributes([
+                                        'data-oc-detalle-row' => 'true',
                                         'x-data' => '{
                                             subtotal: 0,
                                             total: 0,
@@ -734,9 +735,9 @@ class OrdenCompraResource extends Resource
                                                 this.total = (this.subtotal + iva) - descuento;
                                             },
                                         }',
-                                        'x-init' => 'recalculate()',
-                                        'x-on:input.debounce.0ms' => 'recalculate()',
-                                        'x-on:change' => 'recalculate()',
+                                        'x-init' => 'recalculate(); window.dispatchEvent(new CustomEvent("oc-detalles-updated"))',
+                                        'x-on:input.debounce.0ms' => 'recalculate(); window.dispatchEvent(new CustomEvent("oc-detalles-updated"))',
+                                        'x-on:change' => 'recalculate(); window.dispatchEvent(new CustomEvent("oc-detalles-updated"))',
                                     ])
                                     ->schema([
                                         Forms\Components\Hidden::make('es_auxiliar'),
@@ -1013,6 +1014,7 @@ class OrdenCompraResource extends Resource
                                             ->default('1.000000')
                                             ->extraInputAttributes([
                                                 'x-ref' => 'cantidad',
+                                                'data-detalle-cantidad' => 'true',
                                                 'inputmode' => 'decimal',
                                             ])
                                             ->rule('regex:/^\d+(\.\d{0,6})?$/')
@@ -1030,6 +1032,7 @@ class OrdenCompraResource extends Resource
                                             ->live(onBlur: true)
                                             ->extraInputAttributes([
                                                 'x-ref' => 'costo',
+                                                'data-detalle-costo' => 'true',
                                                 'inputmode' => 'decimal',
                                             ])
                                             ->rule('regex:/^\d+(\.\d{0,6})?$/')
@@ -1047,6 +1050,7 @@ class OrdenCompraResource extends Resource
                                             ->live(onBlur: true)
                                             ->extraInputAttributes([
                                                 'x-ref' => 'descuento',
+                                                'data-detalle-descuento' => 'true',
                                                 'inputmode' => 'decimal',
                                             ])
                                             ->rule('regex:/^\d+(\.\d{0,6})?$/')
@@ -1068,6 +1072,7 @@ class OrdenCompraResource extends Resource
                                             ->afterStateUpdated(fn(Get $get, Set $set) => self::syncTotales($get, $set))
                                             ->extraInputAttributes([
                                                 'x-ref' => 'impuesto',
+                                                'data-detalle-impuesto' => 'true',
                                             ])
                                             ->columnSpan(['default' => 12, 'lg' => 1]),
 
@@ -1098,7 +1103,9 @@ class OrdenCompraResource extends Resource
                             ->columns(1)
                             ->addActionLabel('Agregar Producto')
                             ->afterStateUpdated(fn(Get $get, Set $set) => self::syncTotales($get, $set))
-                            ->live(),
+                            ->extraAttributes([
+                                'x-on:click' => 'setTimeout(() => window.dispatchEvent(new CustomEvent("oc-detalles-updated")), 0)',
+                            ]),
                     ]),
 
                 // Hidden fields for totals
@@ -1116,7 +1123,7 @@ class OrdenCompraResource extends Resource
                             ->viewData(fn(Get $get) => $get('resumen_totales') ?? self::buildResumenTotales($get('detalles') ?? [])),
                     ])->columns(1),
 
-            ])->live()->extraAttributes([
+            ])->extraAttributes([
                 'onkeydown' => "if (event.key === 'Enter') { event.preventDefault(); return false; }"
             ]);
     }
