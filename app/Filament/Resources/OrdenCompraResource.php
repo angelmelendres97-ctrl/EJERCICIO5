@@ -156,12 +156,6 @@ class OrdenCompraResource extends Resource
         return is_numeric($normalized) ? (float) $normalized : $default;
     }
 
-    protected static function normalizeDecimalForField(Set $set, string $field, mixed $state, int $decimals = 6, float $default = 0): void
-    {
-        $value = self::parseDecimalInput($state, $default);
-        $set($field, number_format($value, $decimals, '.', ''));
-    }
-
 
     public static function normalizePedidosImportados(array|string|null $pedidos): array
     {
@@ -1016,8 +1010,7 @@ class OrdenCompraResource extends Resource
                                                 'inputmode' => 'decimal',
                                             ])
                                             ->rule('regex:/^\d+(\.\d{0,6})?$/')
-                                            ->afterStateUpdated(function (?string $state, Get $get, Set $set): void {
-                                                self::normalizeDecimalForField($set, 'cantidad', $state, 6, 1);
+                                            ->afterStateUpdated(function (Get $get, Set $set): void {
                                                 self::syncTotales($get, $set);
                                             })
                                             ->dehydrateStateUsing(fn($state) => self::parseDecimalInput($state, 1))
@@ -1034,8 +1027,7 @@ class OrdenCompraResource extends Resource
                                             ])
                                             ->rule('regex:/^\d+(\.\d{0,6})?$/')
                                             ->dehydrateStateUsing(fn($state) => self::parseDecimalInput($state))
-                                            ->afterStateUpdated(function (?string $state, Get $get, Set $set): void {
-                                                self::normalizeDecimalForField($set, 'costo', $state);
+                                            ->afterStateUpdated(function (Get $get, Set $set): void {
                                                 self::syncTotales($get, $set);
                                             })
                                             ->columnSpan(['default' => 12, 'lg' => 2]),
@@ -1051,8 +1043,7 @@ class OrdenCompraResource extends Resource
                                             ])
                                             ->rule('regex:/^\d+(\.\d{0,6})?$/')
                                             ->dehydrateStateUsing(fn($state) => self::parseDecimalInput($state))
-                                            ->afterStateUpdated(function (?string $state, Get $get, Set $set): void {
-                                                self::normalizeDecimalForField($set, 'descuento', $state);
+                                            ->afterStateUpdated(function (Get $get, Set $set): void {
                                                 self::syncTotales($get, $set);
                                             })
                                             ->columnSpan(['default' => 12, 'lg' => 2]),
@@ -1097,8 +1088,7 @@ class OrdenCompraResource extends Resource
                             ->relationship()
                             ->columns(1)
                             ->addActionLabel('Agregar Producto')
-                            ->afterStateUpdated(fn(Get $get, Set $set) => self::syncTotales($get, $set))
-                            ->live(),
+                            ->afterStateUpdated(fn(Get $get, Set $set) => self::syncTotales($get, $set)),
                     ]),
 
                 // Hidden fields for totals
@@ -1116,7 +1106,7 @@ class OrdenCompraResource extends Resource
                             ->viewData(fn(Get $get) => $get('resumen_totales') ?? self::buildResumenTotales($get('detalles') ?? [])),
                     ])->columns(1),
 
-            ])->live()->extraAttributes([
+            ])->extraAttributes([
                 'onkeydown' => "if (event.key === 'Enter') { event.preventDefault(); return false; }"
             ]);
     }
