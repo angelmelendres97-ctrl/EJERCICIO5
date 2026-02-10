@@ -37,8 +37,7 @@
                         </td>
 
                         <td class="p-1">
-                            <select class="fi-select w-18" x-model="row.id_bodega"
-                                @change="onBodegaChange(row)">
+                            <select class="fi-select w-18" x-model="row.id_bodega" @change="onBodegaChange(row)">
                                 <option value="">Seleccione</option>
                                 <template x-for="b in bodegas" :key="b.id">
                                     <option :value="String(b.id)" x-text="b.nombre"></option>
@@ -48,13 +47,22 @@
 
                         <td class="p-1">
                             <div class="relative">
-                                <input class="fi-input w-28" placeholder="Buscar producto..."
-                                    x-model="row.producto_filtro" @focus="row.showResultados = true"
-                                    @input.debounce.250ms="searchProductos(row)"
+                                <input class="fi-input w-18" placeholder="Buscar producto..."
+                                    x-model="row.producto_filtro"
+                                    @focus="
+                                        row.showResultados = true;
+                                        if (!(productosPorFila[row._key] || []).length) searchProductos(row);
+                                    "
+                                                                    @click="
+                                        row.showResultados = true;
+                                        if (!(productosPorFila[row._key] || []).length) searchProductos(row);
+                                    "
+                                                                    @input.debounce.250ms="searchProductos(row)"
                                     @keydown.enter.prevent="selectHighlighted(row)"
                                     @keydown.arrow-down.prevent="highlightNext(row)"
                                     @keydown.arrow-up.prevent="highlightPrev(row)"
-                                    @keydown.escape="row.showResultados = false">
+                                    @keydown.escape.stop="row.showResultados = false" />
+
 
                                 <div class="absolute z-20 mt-1 w-full rounded-lg border bg-white shadow-lg dark:border-gray-700 dark:bg-gray-900"
                                     x-show="row.showResultados && (productosPorFila[row._key] || []).length"
@@ -180,7 +188,7 @@
             normalizeRow(row) {
                 return {
                     _key: row._key || (crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math
-                    .random())),
+                        .random())),
                     pedido_codigo: row.pedido_codigo ?? null,
                     pedido_detalle_id: row.pedido_detalle_id ?? null,
                     es_auxiliar: !!row.es_auxiliar,
@@ -204,7 +212,7 @@
             },
             rowImportKey(r) {
                 return r.pedido_codigo && r.pedido_detalle_id ? `p:${r.pedido_codigo}:${r.pedido_detalle_id}` :
-                null;
+                    null;
             },
             applyServerRows(serverRows) {
                 this.rows = (serverRows || []).map(r => this.normalizeRow(r));
