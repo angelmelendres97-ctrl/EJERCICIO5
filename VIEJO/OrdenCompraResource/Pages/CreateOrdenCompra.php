@@ -73,47 +73,10 @@ class CreateOrdenCompra extends CreateRecord
 
             $record = static::getModel()::create($data);
 
-            $this->syncDetalleRows($record, $data['detalles'] ?? []);
-
             OrdenCompraSyncService::sincronizar($record, $data);
 
             return $record;
         });
-    }
-
-    private function syncDetalleRows(Model $record, array $detalles): void
-    {
-        $record->detalles()->delete();
-
-        $payload = collect($detalles)
-            ->map(function (array $detalle) use ($record) {
-                return [
-                    'id_orden_compra' => $record->id,
-                    'pedido_codigo' => $detalle['pedido_codigo'] ?? null,
-                    'pedido_detalle_id' => $detalle['pedido_detalle_id'] ?? null,
-                    'id_bodega' => (int) ($detalle['id_bodega'] ?? 0),
-                    'bodega' => (string) ($detalle['bodega'] ?? $detalle['id_bodega'] ?? ''),
-                    'codigo_producto' => (string) ($detalle['codigo_producto'] ?? ''),
-                    'producto' => (string) ($detalle['producto'] ?? ''),
-                    'cantidad' => (float) ($detalle['cantidad'] ?? 0),
-                    'costo' => (float) ($detalle['costo'] ?? 0),
-                    'descuento' => (float) ($detalle['descuento'] ?? 0),
-                    'impuesto' => (float) ($detalle['impuesto'] ?? 0),
-                    'valor_impuesto' => (float) ($detalle['valor_impuesto'] ?? 0),
-                    'total' => (float) (($detalle['cantidad'] ?? 0) * ($detalle['costo'] ?? 0) - ($detalle['descuento'] ?? 0) + ($detalle['valor_impuesto'] ?? 0)),
-                    'detalle' => $detalle['detalle'] ?? null,
-                    'unidad' => (string) ($detalle['unidad'] ?? 'UN'),
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ];
-            })
-            ->filter(fn(array $row) => !empty($row['producto']) && !empty($row['codigo_producto']) && !empty($row['id_bodega']))
-            ->values()
-            ->all();
-
-        if (!empty($payload)) {
-            $record->detalles()->insert($payload);
-        }
     }
 
 
@@ -271,14 +234,12 @@ class CreateOrdenCompra extends CreateRecord
 
                 return [
                     'id_bodega' => $id_bodega_item, // Set the correct warehouse for this line
-                    'bodega' => (string) $id_bodega_item,
                     'codigo_producto' => $codigoProducto,
                     'producto' => $productoLinea,
                     'unidad' => $unidadItem,
                     'es_auxiliar' => $esAuxiliar,
                     'es_servicio' => $esServicio,
                     'detalle_pedido' => $detallePedido,
-                    'descripcion_auxiliar' => $auxiliarData['descripcion_auxiliar'] ?? null,
                     'producto_auxiliar' => $auxiliarDescripcion,
                     'producto_servicio' => $servicioDescripcion,
                     'detalle' => $auxiliarData ? json_encode($auxiliarData, JSON_UNESCAPED_UNICODE) : null,
@@ -319,116 +280,12 @@ class CreateOrdenCompra extends CreateRecord
             $this->data['total_descuento'] = number_format($descuentoGeneral, 2, '.', '');
             $this->data['total_impuesto'] = number_format($impuestoGeneral, 2, '.', '');
             $this->data['total'] = number_format($totalGeneral, 2, '.', '');
-
-            $this->form->fill($this->data);
-            $this->dispatch('oc-detalles-sync', detalles: $this->data['detalles']);
         }
 
         $this->applySolicitadoPor($connectionName, $pedidosUnicos);
 
         // Use a more specific event name if needed, or just close the generic modal
         $this->dispatch('close-modal', id: 'importar_pedido');
-    }
-
-    public function fetchBodegas(): array
-    {
-        $empresaId = $this->data['id_empresa'] ?? null;
-        $amdgEmpresa = $this->data['amdg_id_empresa'] ?? null;
-        $amdgSucursal = $this->data['amdg_id_sucursal'] ?? null;
-
-        if (!$empresaId || !$amdgEmpresa) {
-            return [];
-        }
-
-        $connectionName = OrdenCompraResource::getExternalConnectionName((int) $empresaId);
-        if (!$connectionName) {
-            return [];
-        }
-
-        try {
-            $schema = DB::connection($connectionName)->getSchemaBuilder();
-            if (!$schema->hasTable('saebode')) {
-                return [];
-            }
-
-            $query = DB::connection($connectionName)->table('saebode');
-            if ($schema->hasColumn('saebode', 'bode_cod_empr')) {
-                $query->where('bode_cod_empr', $amdgEmpresa);
-            }
-            if ($amdgSucursal && $schema->hasColumn('saebode', 'bode_cod_sucu')) {
-                $query->where('bode_cod_sucu', $amdgSucursal);
-            }
-
-            return $query
-                ->select(['bode_cod_bode', 'bode_nom_bode'])
-                ->orderBy('bode_nom_bode')
-                ->limit(500)
-                ->get()
-                ->map(fn($b) => [
-                    'id' => (string) $b->bode_cod_bode,
-                    'nombre' => trim(((string) $b->bode_nom_bode) . ' (' . ((string) $b->bode_cod_bode) . ')'),
-                ])
-                ->all();
-        } catch (\Throwable $e) {
-            return [];
-        }
-    }
-
-    public function searchProductosPorBodega(string $bodegaId, string $term = ''): array
-    {
-        $empresaId = $this->data['id_empresa'] ?? null;
-        $amdgEmpresa = $this->data['amdg_id_empresa'] ?? null;
-        $amdgSucursal = $this->data['amdg_id_sucursal'] ?? null;
-
-        if (!$empresaId || !$amdgEmpresa || !$amdgSucursal || $bodegaId === '') {
-            return [];
-        }
-
-        $connectionName = OrdenCompraResource::getExternalConnectionName((int) $empresaId);
-        if (!$connectionName) {
-            return [];
-        }
-
-        try {
-            return DB::connection($connectionName)
-                ->table('saeprod')
-                ->join('saeprbo', function ($join) {
-                    $join->on('prod_cod_prod', '=', 'prbo_cod_prod')
-                        ->on('prod_cod_empr', '=', 'prbo_cod_empr')
-                        ->on('prod_cod_sucu', '=', 'prbo_cod_sucu');
-                })
-                ->leftJoin('saeunid', 'prbo_cod_unid', '=', 'unid_cod_unid')
-                ->where('prod_cod_empr', $amdgEmpresa)
-                ->where('prod_cod_sucu', $amdgSucursal)
-                ->where('prbo_cod_bode', $bodegaId)
-                ->when($term !== '', function ($q) use ($term) {
-                    $q->where(function ($sub) use ($term) {
-                        $sub->where('prod_nom_prod', 'like', "%{$term}%")
-                            ->orWhere('prod_cod_prod', 'like', "%{$term}%");
-                    });
-                })
-                ->orderBy('prod_nom_prod')
-                ->limit(50)
-                ->get([
-                    'prod_cod_prod',
-                    'prod_nom_prod',
-                    'prbo_uco_prod',
-                    'prbo_iva_porc',
-                    'prbo_cod_unid',
-                    'unid_nom_unid',
-                ])
-                ->map(fn($r) => [
-                    'codigo' => (string) $r->prod_cod_prod,
-                    'nombre' => (string) $r->prod_nom_prod,
-                    'label' => trim(((string) $r->prod_nom_prod) . ' (' . ((string) $r->prod_cod_prod) . ')'),
-                    'costo' => (float) ($r->prbo_uco_prod ?? 0),
-                    'impuesto' => (float) ($r->prbo_iva_porc ?? 0),
-                    'unidad' => (string) ($r->unid_nom_unid ?? $r->prbo_cod_unid ?? 'UN'),
-                ])
-                ->all();
-        } catch (\Throwable $e) {
-            return [];
-        }
     }
 
     protected function beforeCreate(): void

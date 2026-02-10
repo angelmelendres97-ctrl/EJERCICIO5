@@ -433,7 +433,7 @@ class EditOrdenCompra extends EditRecord
 
                 $auxiliarData = [
                     'codigo' => $detalle->dped_cod_auxiliar ?? null,
-                    'descripcion' => $detalle->dped_det_dped ?? null,
+                    'descripcion' => $descripcionAuxiliar ?: ($detalle->dped_det_dped ?? null),
                     'descripcion_auxiliar' => $descripcionAuxiliar,
                 ];
             }
@@ -823,12 +823,16 @@ class EditOrdenCompra extends EditRecord
                 ->where('prod_cod_empr', $amdgEmpresa)
                 ->where('prod_cod_sucu', $amdgSucursal)
                 ->where('prbo_cod_bode', $bodegaId)
-                ->when($term !== '', function ($q) use ($term) {
-                    $q->where(function ($sub) use ($term) {
-                        $sub->where('prod_nom_prod', 'like', "%{$term}%")
-                            ->orWhere('prod_cod_prod', 'like', "%{$term}%");
+                ->when(trim($term) !== '', function ($q) use ($term) {
+                    $term = mb_strtolower(trim($term), 'UTF-8');
+                    $like = '%' . $term . '%';
+
+                    $q->where(function ($sub) use ($like) {
+                        $sub->whereRaw('LOWER(prod_nom_prod) LIKE ?', [$like])
+                            ->orWhereRaw('LOWER(prod_cod_prod) LIKE ?', [$like]);
                     });
                 })
+
                 ->orderBy('prod_nom_prod')
                 ->limit(50)
                 ->get([
