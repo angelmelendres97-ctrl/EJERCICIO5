@@ -266,6 +266,7 @@ class EditOrdenCompra extends EditRecord
             $this->recalculateTotals();
             $this->applySolicitadoPor($connectionName, $pedidosUnicos);
             $this->form->fill($this->data);
+            $this->dispatch('oc-detalles-sync', detalles: $this->data['detalles']);
             $this->dispatch('close-modal', id: 'importar_pedido');
             return;
         }
@@ -298,6 +299,7 @@ class EditOrdenCompra extends EditRecord
             $this->recalculateTotals();
             $this->applySolicitadoPor($connectionName, $pedidosUnicos);
             $this->form->fill($this->data);
+            $this->dispatch('oc-detalles-sync', detalles: $this->data['detalles']);
             $this->dispatch('close-modal', id: 'importar_pedido');
             return;
         }
@@ -629,6 +631,43 @@ class EditOrdenCompra extends EditRecord
         }
     }
 
+    private function syncDetalleRows(array $detalles): void
+    {
+        if (!$this->record) {
+            return;
+        }
+
+        $this->record->detalles()->delete();
+
+        $payload = collect($detalles)
+            ->map(function (array $detalle) {
+                return [
+                    'id_orden_compra' => $this->record->id,
+                    'pedido_codigo' => $detalle['pedido_codigo'] ?? null,
+                    'pedido_detalle_id' => $detalle['pedido_detalle_id'] ?? null,
+                    'id_bodega' => $detalle['id_bodega'] ?? null,
+                    'codigo_producto' => $detalle['codigo_producto'] ?? null,
+                    'producto' => $detalle['producto'] ?? null,
+                    'cantidad' => (float) ($detalle['cantidad'] ?? 0),
+                    'costo' => (float) ($detalle['costo'] ?? 0),
+                    'descuento' => (float) ($detalle['descuento'] ?? 0),
+                    'impuesto' => (float) ($detalle['impuesto'] ?? 0),
+                    'valor_impuesto' => (float) ($detalle['valor_impuesto'] ?? 0),
+                    'detalle' => $detalle['detalle'] ?? null,
+                    'unidad' => $detalle['unidad'] ?? null,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ];
+            })
+            ->filter(fn(array $row) => !empty($row['producto']) || !empty($row['codigo_producto']))
+            ->values()
+            ->all();
+
+        if (!empty($payload)) {
+            $this->record->detalles()->insert($payload);
+        }
+    }
+
     protected function mutateFormDataBeforeSave(array $data): array
     {
         $newDetalles = [];
@@ -661,6 +700,8 @@ class EditOrdenCompra extends EditRecord
 
     protected function afterSave(): void
     {
+        $this->syncDetalleRows($this->data['detalles'] ?? []);
+
         $pedidosActuales = OrdenCompraResource::normalizePedidosImportados($this->record->pedidos_importados);
         $agregados = array_values(array_diff($pedidosActuales, $this->pedidosOriginales));
         $eliminados = array_values(array_diff($this->pedidosOriginales, $pedidosActuales));
