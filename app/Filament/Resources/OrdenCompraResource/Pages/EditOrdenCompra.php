@@ -780,6 +780,7 @@ class EditOrdenCompra extends EditRecord
                     'prbo_iva_porc',
                     'prbo_cod_unid',
                     'unid_nom_unid',
+                    'unid_sigl_unid',
                 ])
                 ->map(fn($r) => [
                     'codigo' => (string) $r->prod_cod_prod,
@@ -787,7 +788,7 @@ class EditOrdenCompra extends EditRecord
                     'label' => trim(((string) $r->prod_nom_prod) . ' (' . ((string) $r->prod_cod_prod) . ')'),
                     'costo' => (float) ($r->prbo_uco_prod ?? 0),
                     'impuesto' => (float) ($r->prbo_iva_porc ?? 0),
-                    'unidad' => (string) ($r->unid_nom_unid ?? $r->prbo_cod_unid ?? 'UN'),
+                    'unidad' => (string) ($r->unid_sigl_unid ?? $r->unid_nom_unid ?? 'UN'),
                 ])
                 ->all();
         } catch (\Throwable $e) {
