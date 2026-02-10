@@ -201,6 +201,31 @@ class OrdenCompraResource extends Resource
         ];
     }
 
+    protected static function parseDecimalInput(mixed $value): float
+    {
+        if ($value === null || $value === '') {
+            return 0;
+        }
+
+        $normalized = preg_replace('/[^0-9,.-]/', '', (string) $value) ?? '';
+
+        if (str_contains($normalized, ',')) {
+            $normalized = str_replace('.', '', $normalized);
+            $normalized = str_replace(',', '.', $normalized);
+        }
+
+        return (float) $normalized;
+    }
+
+    protected static function normalizeDecimalInput(mixed $value, int $maxDecimals = 6): string
+    {
+        $numericValue = self::parseDecimalInput($value);
+        $formatted = number_format($numericValue, $maxDecimals, '.', '');
+        $trimmed = rtrim(rtrim($formatted, '0'), '.');
+
+        return $trimmed === '' ? '0' : $trimmed;
+    }
+
     public static function form(Form $form): Form
     {
         $proveedorFormSchema = ProveedorResource::getFormSchema(
@@ -991,14 +1016,22 @@ class OrdenCompraResource extends Resource
                                         Forms\Components\Hidden::make('producto'),
 
                                         Forms\Components\TextInput::make('cantidad')
-                                            ->numeric()
                                             ->required()
-                                            ->live(onBlur: true)
-                                            ->default(1)
-                                            ->afterStateUpdated(fn(Get $get, Set $set) => self::syncTotales($get, $set))
+                                            ->default('1')
+                                            ->dehydrateStateUsing(fn($state) => self::parseDecimalInput($state))
                                             ->extraInputAttributes([
                                                 'x-ref' => 'cantidad',
+                                                'inputmode' => 'decimal',
                                             ])
+                                            ->afterStateHydrated(function (Set $set, $state): void {
+                                                $set('cantidad', self::normalizeDecimalInput($state));
+                                            })
+                                            ->rule('regex:/^-?\d+(\.\d{0,6})?$/')
+                                            ->live(onBlur: true)
+                                            ->afterStateUpdated(function (Set $set, Get $get, ?string $state): void {
+                                                $set('cantidad', self::normalizeDecimalInput($state));
+                                                self::syncTotales($get, $set);
+                                            })
                                             ->helperText(fn(Get $get) => filled($get('unidad')) ? 'Unidad: ' . $get('unidad') : null)
                                             ->columnSpan(['default' => 12, 'lg' => 1]),
 
@@ -1006,56 +1039,43 @@ class OrdenCompraResource extends Resource
                                             ->label('Costo')
                                             ->required()
                                             ->prefix('$')
-                                            ->live(onBlur: true)
                                             ->extraInputAttributes([
                                                 'x-ref' => 'costo',
                                                 'inputmode' => 'decimal',
-                                                'oninput' => "let v=this.value
-        .replace(/[^0-9.]/g,'')          // solo números y punto
-        .replace(/(\\..*)\\./g,'$1');    // solo 1 punto
-
-        // limitar a 6 decimales
-        if (v.includes('.')) {
-            const parts = v.split('.');
-            parts[0] = parts[0].replace(/^0+(?=\\d)/,''); // opcional: quita ceros a la izquierda
-            parts[1] = (parts[1] || '').slice(0,6);
-            v = parts[0] + '.' + parts[1];
-        }
-        this.value = v;",
                                             ])
-                                            ->rule('regex:/^\d+(\.\d{0,6})?$/')
-                                            ->rule('regex:/^\d+(\.\d{0,6})?$/') // valida backend
-                                            ->dehydrateStateUsing(fn($state) => $state === '' || $state === null ? 0 : (float) $state)
-                                            ->afterStateUpdated(fn(Get $get, Set $set) => self::syncTotales($get, $set))
+                                            ->rule('regex:/^-?\d+(\.\d{0,6})?$/')
+                                            ->dehydrateStateUsing(fn($state) => self::parseDecimalInput($state))
+                                            ->afterStateHydrated(function (Set $set, $state): void {
+                                                $set('costo', self::normalizeDecimalInput($state));
+                                            })
+                                            ->live(onBlur: true)
+                                            ->afterStateUpdated(function (Set $set, Get $get, ?string $state): void {
+                                                $set('costo', self::normalizeDecimalInput($state));
+                                                self::syncTotales($get, $set);
+                                            })
                                             ->columnSpan(['default' => 12, 'lg' => 2]),
 
                                         Forms\Components\TextInput::make('descuento')
                                             ->label('Descuento')
                                             ->required()
-                                            ->default(0)
+                                            ->default('0')
                                             ->prefix('$')
-                                            ->live(onBlur: true)
                                             ->extraInputAttributes([
                                                 'x-ref' => 'descuento',
                                                 'inputmode' => 'decimal',
-                                                'oninput' => "let v=this.value
-        .replace(/[^0-9.]/g,'')          // solo números y punto
-        .replace(/(\\..*)\\./g,'$1');    // solo 1 punto
-
-        // limitar a 6 decimales
-        if (v.includes('.')) {
-            const parts = v.split('.');
-            parts[0] = parts[0].replace(/^0+(?=\\d)/,''); // opcional: quita ceros a la izquierda
-            parts[1] = (parts[1] || '').slice(0,6);
-            v = parts[0] + '.' + parts[1];
-        }
-        this.value = v;",
                                             ])
-                                            ->rule('regex:/^\d+(\.\d{0,6})?$/')
-                                            ->rule('regex:/^\d+(\.\d{0,6})?$/')
-                                            ->dehydrateStateUsing(fn($state) => $state === '' || $state === null ? 0 : (float) $state)
-                                            ->afterStateUpdated(fn(Get $get, Set $set) => self::syncTotales($get, $set))
+                                            ->rule('regex:/^-?\d+(\.\d{0,6})?$/')
+                                            ->dehydrateStateUsing(fn($state) => self::parseDecimalInput($state))
+                                            ->afterStateHydrated(function (Set $set, $state): void {
+                                                $set('descuento', self::normalizeDecimalInput($state));
+                                            })
+                                            ->live(onBlur: true)
+                                            ->afterStateUpdated(function (Set $set, Get $get, ?string $state): void {
+                                                $set('descuento', self::normalizeDecimalInput($state));
+                                                self::syncTotales($get, $set);
+                                            })
                                             ->columnSpan(['default' => 12, 'lg' => 2]),
+
                                         Forms\Components\Placeholder::make('subtotal_linea')
                                             ->label('Subtotal')
                                             ->content(new HtmlString('<span x-text="format(subtotal)"></span>'))
