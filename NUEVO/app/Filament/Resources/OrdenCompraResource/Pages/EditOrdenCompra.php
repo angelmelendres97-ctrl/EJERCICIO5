@@ -774,6 +774,16 @@ class EditOrdenCompra extends EditRecord
             }
 
             $query = DB::connection($connectionName)->table('saebode');
+
+            if ($amdgSucursal && $schema->hasTable('saesubo')) {
+                $query->join('saesubo', 'subo_cod_bode', '=', 'bode_cod_bode')
+                    ->where('subo_cod_sucu', $amdgSucursal);
+
+                if ($schema->hasColumn('saesubo', 'subo_cod_empr')) {
+                    $query->where('subo_cod_empr', $amdgEmpresa);
+                }
+            }
+
             if ($schema->hasColumn('saebode', 'bode_cod_empr')) {
                 $query->where('bode_cod_empr', $amdgEmpresa);
             }
@@ -784,6 +794,7 @@ class EditOrdenCompra extends EditRecord
             return $query
                 ->select(['bode_cod_bode', 'bode_nom_bode'])
                 ->orderBy('bode_nom_bode')
+                ->distinct()
                 ->limit(500)
                 ->get()
                 ->map(fn($b) => [
