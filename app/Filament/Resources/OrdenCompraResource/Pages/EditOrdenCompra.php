@@ -61,6 +61,8 @@ class EditOrdenCompra extends EditRecord
                 ->all();
         }
 
+        $unidadNombrePorCodigo = $this->resolveUnidadNombreMap($data);
+
         $detallePorPedido = $this->resolveDetallePedidoData($data);
 
         if (isset($data['detalles']) && is_array($data['detalles'])) {
@@ -79,6 +81,8 @@ class EditOrdenCompra extends EditRecord
                     $auxiliarNombre = $detalleData['descripcion_auxiliar']
                         ?? $detalleData['descripcion']
                         ?? null;
+
+                    $data['detalles'][$index]['descripcion_auxiliar'] = $auxiliarNombre;
 
                     $data['detalles'][$index]['producto_auxiliar'] = trim(collect([
                         $detalleData['codigo'] ? self::AUXILIAR_LABEL . $detalleData['codigo'] : null,
@@ -107,10 +111,63 @@ class EditOrdenCompra extends EditRecord
 
                     $data['detalles'][$index]['detalle_pedido'] = $detallePedido;
                 }
+
+                $unidadRaw = (string) ($detalle['unidad'] ?? '');
+                if ($unidadRaw !== '' && isset($unidadNombrePorCodigo[$unidadRaw])) {
+                    $data['detalles'][$index]['unidad'] = $unidadNombrePorCodigo[$unidadRaw];
+                }
             }
         }
 
         return $data;
+    }
+
+    private function resolveUnidadNombreMap(array $data): array
+    {
+        $detalles = $data['detalles'] ?? [];
+
+        $codigos = collect($detalles)
+            ->pluck('unidad')
+            ->filter(fn($unidad) => is_numeric($unidad) && (int) $unidad > 0)
+            ->map(fn($unidad) => (int) $unidad)
+            ->unique()
+            ->values()
+            ->all();
+
+        if (empty($codigos)) {
+            return [];
+        }
+
+        $empresaId = $data['id_empresa'] ?? null;
+        $amdgEmpresa = $data['amdg_id_empresa'] ?? null;
+
+        if (!$empresaId || !$amdgEmpresa) {
+            return [];
+        }
+
+        $connectionName = OrdenCompraResource::getExternalConnectionName((int) $empresaId);
+        if (!$connectionName) {
+            return [];
+        }
+
+        try {
+            $schema = DB::connection($connectionName)->getSchemaBuilder();
+
+            return DB::connection($connectionName)
+                ->table('saeunid')
+                ->whereIn('unid_cod_unid', $codigos)
+                ->when(
+                    $schema->hasColumn('saeunid', 'unid_cod_empr'),
+                    fn($q) => $q->where('unid_cod_empr', $amdgEmpresa)
+                )
+                ->get(['unid_cod_unid', 'unid_sigl_unid', 'unid_nom_unid'])
+                ->mapWithKeys(fn($u) => [
+                    (string) $u->unid_cod_unid => (string) ($u->unid_sigl_unid ?: $u->unid_nom_unid ?: $u->unid_cod_unid),
+                ])
+                ->all();
+        } catch (\Throwable $e) {
+            return [];
+        }
     }
 
     protected function getHeaderActions(): array
@@ -408,6 +465,7 @@ class EditOrdenCompra extends EditRecord
                 'codigo_producto' => $codigoProducto,
                 'producto' => $productoLinea,
                 'unidad' => $unidadItem,
+                'descripcion_auxiliar' => $auxiliarData['descripcion_auxiliar'] ?? null,
 
                 'es_auxiliar' => $esAuxiliar,
                 'es_servicio' => $esServicio,

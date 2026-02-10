@@ -278,6 +278,7 @@ class CreateOrdenCompra extends CreateRecord
                     'es_auxiliar' => $esAuxiliar,
                     'es_servicio' => $esServicio,
                     'detalle_pedido' => $detallePedido,
+                    'descripcion_auxiliar' => $auxiliarData['descripcion_auxiliar'] ?? null,
                     'producto_auxiliar' => $auxiliarDescripcion,
                     'producto_servicio' => $servicioDescripcion,
                     'detalle' => $auxiliarData ? json_encode($auxiliarData, JSON_UNESCAPED_UNICODE) : null,
