@@ -4,8 +4,9 @@
 
 <div wire:ignore x-data="ordenCompraProductosTable(@js($rows))" x-init="init()"
     x-on:oc-detalles-sync.window="if ($event.detail?.detalles) mergeServerRows($event.detail.detalles)" class="space-y-4">
-    <div class="overflow-x-auto border rounded-xl border-gray-200 dark:border-gray-700">
-        <table class="w-full text-xs">
+    <div class="border rounded-xl border-gray-200 dark:border-gray-700 overflow-visible">
+        <div class="overflow-x-auto overflow-y-visible">
+            <table class="w-full text-xs overflow-visible">
             <thead class="bg-gray-100 dark:bg-gray-800">
                 <tr>
                     <th class="p-2 w-12"></th>
@@ -22,7 +23,7 @@
                     <th class="p-2 text-right">Total</th>
                 </tr>
             </thead>
-            <tbody>
+            <tbody class="overflow-visible">
                 <template x-if="rows.length === 0">
                     <tr>
                         <td colspan="12" class="p-4 text-center text-gray-500">Sin productos</td>
@@ -37,7 +38,8 @@
                         </td>
 
                         <td class="p-1">
-                            <select class="fi-select w-18" x-model="row.id_bodega" @change="onBodegaChange(row)">
+                            <select class="fi-select w-40" x-model="row.id_bodega" @focus="loadBodegas(true)"
+                                @change="onBodegaChange(row)">
                                 <option value="">Seleccione</option>
                                 <template x-for="b in bodegas" :key="b.id">
                                     <option :value="String(b.id)" x-text="b.nombre"></option>
@@ -46,8 +48,8 @@
                         </td>
 
                         <td class="p-1">
-                            <div class="relative">
-                                <input class="fi-input w-18" placeholder="Buscar producto..."
+                            <div class="relative min-w-72">
+                                <input class="fi-input w-full" placeholder="Buscar producto..."
                                     x-model="row.producto_filtro"
                                     @focus="
                                         row.showResultados = true;
@@ -64,7 +66,7 @@
                                     @keydown.escape.stop="row.showResultados = false" />
 
 
-                                <div class="absolute z-20 mt-1 w-full rounded-lg border bg-white shadow-lg dark:border-gray-700 dark:bg-gray-900"
+                                <div class="absolute left-0 top-full z-[120] mt-1 w-full min-w-80 max-h-56 overflow-y-auto rounded-lg border bg-white shadow-lg dark:border-gray-700 dark:bg-gray-900"
                                     x-show="row.showResultados && (productosPorFila[row._key] || []).length"
                                     @click.outside="row.showResultados = false">
                                     <template x-for="(p, pIdx) in (productosPorFila[row._key] || [])"
@@ -104,12 +106,15 @@
                     </tr>
                 </template>
             </tbody>
-        </table>
+            </table>
+        </div>
     </div>
 
-    <div class="flex justify-end">
-        <button type="button" class="fi-btn fi-btn-size-sm fi-btn-color-primary" @click="addRow()">Agregar
-            producto</button>
+    <div class="flex justify-start">
+        <button type="button" class="fi-btn fi-btn-size-sm fi-btn-color-primary font-bold" @click="addRow()">
+            <span aria-hidden="true">➕</span>
+            <span>Agregar producto</span>
+        </button>
     </div>
 
     <div class="ml-auto w-full max-w-md border rounded-xl border-gray-200 dark:border-gray-700 p-3">
@@ -232,13 +237,19 @@
                 this.rows.forEach(r => this.fillProductoFiltro(r));
                 this.sync();
             },
-            async loadBodegas() {
-                if (this.bodegas.length || !this.livewire) return;
+            async loadBodegas(force = false) {
+                if (!this.livewire || (this.bodegas.length && !force)) return;
                 try {
                     this.bodegas = await this.livewire.call('fetchBodegas');
+                    this.rows.forEach((row) => this.ensureBodegaValue(row));
                 } catch (_) {
                     this.bodegas = [];
                 }
+            },
+            ensureBodegaValue(row) {
+                row.id_bodega = String(row.id_bodega ?? '');
+                const selected = this.bodegas.find((bodega) => String(bodega.id) === row.id_bodega);
+                row.bodega = selected ? selected.nombre : (row.bodega || row.id_bodega);
             },
             fillProductoFiltro(row) {
                 row.producto_filtro = row.producto ? `${row.producto} (${row.codigo_producto || ''})`.trim() : '';
@@ -248,13 +259,22 @@
                     this.productosPorFila[row._key] = [];
                     return;
                 }
-                const list = await this.livewire.call('searchProductosPorBodega', row.id_bodega, row
-                    .producto_filtro || '');
+                const requestTerm = row.producto_filtro || '';
+                row._searchToken = crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random());
+                const currentToken = row._searchToken;
+
+                const list = await this.livewire.call('searchProductosPorBodega', row.id_bodega, requestTerm);
+
+                if (row._searchToken !== currentToken) {
+                    return;
+                }
+
                 this.productosPorFila[row._key] = list || [];
                 row.showResultados = true;
                 row.highlightedIndex = (this.productosPorFila[row._key] || []).length ? 0 : -1;
             },
             async onBodegaChange(row) {
+                this.ensureBodegaValue(row);
                 row.codigo_producto = '';
                 row.producto = '';
                 row.unidad = 'UN';
@@ -304,6 +324,7 @@
             },
             addRow() {
                 this.rows.push(this.normalizeRow({}));
+                this.loadBodegas();
                 this.sync();
             },
             removeRow(i) {
@@ -359,7 +380,7 @@
                     const base = Math.max(0, this.lineSubtotal(r) - this.n(r.descuento));
                     return {
                         ...r,
-                        id_bodega: this.n(r.id_bodega),
+                        id_bodega: String(r.id_bodega || ''),
                         bodega: r.bodega || String(r.id_bodega || ''),
                         valor_impuesto: (base * (this.n(r.impuesto) / 100)).toFixed(6)
                     };
