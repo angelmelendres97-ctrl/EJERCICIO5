@@ -37,13 +37,22 @@
                         </td>
 
                         <td class="p-1">
-                            <select class="fi-select w-28" x-model="row.id_bodega" @focus="ensureBodegasLoaded()"
-                                @click="ensureBodegasLoaded()" @change="onBodegaChange(row)">
+                            <select class="fi-select w-28" :key="`bodega-${row._key}-${bodegas.length}`"
+                                :value="String(row.id_bodega ?? '')" @focus="ensureBodegasLoaded()"
+                                @click="ensureBodegasLoaded()"
+                                @change="
+                                    row.id_bodega = String($event.target.value || '');
+                                    onBodegaChange(row);
+                                ">
                                 <option value="">Seleccione</option>
+
                                 <template x-for="b in bodegas" :key="b.id">
-                                    <option :value="String(b.id)" x-text="b.nombre"></option>
+                                    <option :value="String(b.id)" :selected="sameBodegaId(b.id, row.id_bodega)"
+                                        x-text="b.nombre">
+                                    </option>
                                 </template>
                             </select>
+
                         </td>
 
                         <td class="p-1">
@@ -52,7 +61,12 @@
                         </td>
 
                         <td class="p-1"><input class="fi-input w-28" x-model="row.codigo_producto" readonly></td>
-                        <td class="p-1"><input class="fi-input w-64" :value="descripcionItem(row)" readonly></td>
+                        <td class="p-1">
+                            <input class="fi-input w-64"
+                                :value="(row.detalle_pedido && String(row.detalle_pedido).trim() !== '') ? row.detalle_pedido:
+                                    descripcionItem(row)"
+                                readonly>
+                        </td>
                         <td class="p-1"><input class="fi-input w-20" x-model="row.unidad" readonly></td>
 
                         <td class="p-1"><input type="number" step="0.000001" class="fi-input w-20"
@@ -180,10 +194,23 @@
                 loading: false,
                 bodegaNombre: '',
             },
-            init() {
+            async init() {
+                console.log('[OC] init initialRows:', initialRows);
+
                 this.applyServerRows(initialRows || []);
-                this.loadBodegas();
+
+                // ✅ Espera a que bodegas carguen y se haga el mapeo
+                await this.loadBodegas(true);
+
+                // ✅ Fuerza un tick para que el DOM replique el valor seleccionado
+                this.$nextTick(() => {
+                    console.log('[OC] post-loadBodegas rows:', this.rows.map(r => ({
+                        key: r._key,
+                        id_bodega: r.id_bodega
+                    })));
+                });
             },
+
             getCurrentContext() {
                 return {
                     empresa: String(this.livewire?.get('data.id_empresa') ?? ''),
@@ -245,6 +272,7 @@
                     es_auxiliar: !!row.es_auxiliar,
                     es_servicio: !!row.es_servicio,
                     detalle: row.detalle ?? null,
+                    detalle_pedido: row.detalle_pedido ?? null,
                     producto_auxiliar: row.producto_auxiliar ?? '',
                     producto_servicio: row.producto_servicio ?? '',
                     id_bodega: this.normalizeBodegaId(row.id_bodega ?? ''),
@@ -262,6 +290,7 @@
                     impuesto: String(row.impuesto ?? '0'),
                 }
             },
+
             rowImportKey(r) {
                 return r.pedido_codigo && r.pedido_detalle_id ? `p:${r.pedido_codigo}:${r.pedido_detalle_id}` :
                     null;
@@ -270,6 +299,11 @@
                 this.rows = (serverRows || []).map(r => this.normalizeRow(r));
                 this.rows.forEach(r => this.fillProductoFiltro(r));
                 this.sync();
+                console.log('[OC] check id_bodega after apply/load:', this.rows.map(r => ({
+                    key: r._key,
+                    id_bodega: r.id_bodega,
+                    type: typeof r.id_bodega
+                })));
             },
             mergeServerRows(serverRows) {
                 const incoming = (serverRows || []).map(r => this.normalizeRow(r));
@@ -289,6 +323,9 @@
                 if (!force && this.bodegas.length) return;
                 try {
                     this.bodegas = await this.livewire.call('fetchBodegas');
+                    console.log('[OC] bodegas raw:', this.bodegas);
+                    console.log('[OC] ejemplo bodega keys:', this.bodegas?.[0] ? Object.keys(this.bodegas[0]) :
+                        'sin bodegas');
                     const ctx = this.getCurrentContext();
                     this.bodegasContext = `${ctx.empresa}-${ctx.amdgEmpresa}-${ctx.amdgSucursal}`;
                     this.rows.forEach((row) => {
