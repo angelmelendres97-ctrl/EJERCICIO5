@@ -8,8 +8,8 @@
             <thead class="bg-gray-100 dark:bg-gray-800">
                 <tr>
                     <th class="p-2 w-10"></th>
-                    <th class="p-2 min-w-44">Bodega</th>
-                    <th class="p-2 min-w-56">Producto</th>
+                    <th class="p-2 min-w-52">Bodega</th>
+                    <th class="p-2 min-w-64">Producto</th>
                     <th class="p-2">Código</th>
                     <th class="p-2 min-w-64">Descripción</th>
                     <th class="p-2">Unidad</th>
@@ -29,11 +29,11 @@
                 <template x-for="(row, idx) in rows" :key="row._key">
                     <tr class="border-t border-gray-200 dark:border-gray-700 align-top">
                         <td class="p-1 text-center">
-                            <button type="button" class="text-danger-600" @click="removeRow(idx)">✕</button>
+                            <button type="button" class="text-danger-600" @click.stop.prevent="removeRow(idx)">✕</button>
                         </td>
 
                         <td class="p-1">
-                            <select class="fi-select w-full" x-model="row.id_bodega" @change="onBodegaChange(row)">
+                            <select class="fi-select w-full min-w-52" x-model="row.id_bodega" @change="onBodegaChange(row)">
                                 <option value="">Seleccione</option>
                                 <template x-for="b in bodegas" :key="b.id">
                                     <option :value="String(b.id)" x-text="b.nombre"></option>
@@ -42,22 +42,45 @@
                         </td>
 
                         <td class="p-1">
-                            <input class="fi-input mb-1" placeholder="Buscar producto..." x-model="row.producto_filtro" @input.debounce.250ms="searchProductos(row)">
-                            <select class="fi-select w-full" x-model="row.codigo_producto" @change="onProductoChange(row)">
-                                <option value="">Seleccione</option>
-                                <template x-for="p in (productosPorFila[row._key] || [])" :key="`${p.codigo}-${p.label}`">
-                                    <option :value="p.codigo" x-text="p.label"></option>
-                                </template>
-                            </select>
+                            <div class="relative">
+                                <input
+                                    class="fi-input w-full min-w-64"
+                                    placeholder="Buscar producto..."
+                                    x-model="row.producto_filtro"
+                                    @focus="row.showResultados = true"
+                                    @input.debounce.250ms="searchProductos(row)"
+                                    @keydown.enter.prevent="selectHighlighted(row)"
+                                    @keydown.arrow-down.prevent="highlightNext(row)"
+                                    @keydown.arrow-up.prevent="highlightPrev(row)"
+                                    @keydown.escape="row.showResultados = false"
+                                >
+
+                                <div
+                                    class="absolute z-20 mt-1 w-full rounded-lg border bg-white shadow-lg dark:border-gray-700 dark:bg-gray-900"
+                                    x-show="row.showResultados && (productosPorFila[row._key] || []).length"
+                                    @click.outside="row.showResultados = false"
+                                >
+                                    <template x-for="(p, pIdx) in (productosPorFila[row._key] || [])" :key="`${p.codigo}-${p.label}`">
+                                        <button
+                                            type="button"
+                                            class="block w-full px-3 py-2 text-left text-xs hover:bg-gray-100 dark:hover:bg-gray-800"
+                                            :class="{ 'bg-gray-100 dark:bg-gray-800': pIdx === (row.highlightedIndex ?? -1) }"
+                                            @mouseenter="row.highlightedIndex = pIdx"
+                                            @click="selectProducto(row, p)"
+                                            x-text="p.label"
+                                        ></button>
+                                    </template>
+                                </div>
+                            </div>
                         </td>
 
                         <td class="p-1"><input class="fi-input w-28" x-model="row.codigo_producto" readonly></td>
-                        <td class="p-1"><input class="fi-input w-full" :value="descripcionItem(row)" readonly></td>
+                        <td class="p-1"><input class="fi-input w-64" :value="descripcionItem(row)" readonly></td>
                         <td class="p-1"><input class="fi-input w-20" x-model="row.unidad" readonly></td>
 
-                        <td class="p-1"><input type="number" step="0.000001" class="fi-input w-24" x-model="row.cantidad" @input="sync()"></td>
-                        <td class="p-1"><input type="number" step="0.000001" class="fi-input w-24" x-model="row.costo" @input="sync()"></td>
-                        <td class="p-1"><input type="number" step="0.000001" class="fi-input w-24" x-model="row.descuento" @input="sync()"></td>
+                        <td class="p-1"><input type="number" step="0.000001" class="fi-input w-20" x-model="row.cantidad" @input="sync()"></td>
+                        <td class="p-1"><input type="number" step="0.000001" class="fi-input w-20" x-model="row.costo" @input="sync()"></td>
+                        <td class="p-1"><input type="number" step="0.000001" class="fi-input w-20" x-model="row.descuento" @input="sync()"></td>
                         <td class="p-1">
                             <select class="fi-select w-20" x-model="row.impuesto" @change="sync()">
                                 <option value="0">0%</option><option value="5">5%</option><option value="8">8%</option><option value="15">15%</option><option value="18">18%</option>
@@ -101,6 +124,7 @@
 window.ordenCompraProductosTable = window.ordenCompraProductosTable || function (initialRows) {
     return {
         rows: [], bodegas: [], productosPorFila: {},
+        syncTimer: null,
         summary: { subtotal: 0, descuento: 0, impuesto: 0, total: 0, basePorIva: {}, ivaPorIva: {}, tarifas: [] },
         init() { this.applyServerRows(initialRows || []); this.loadBodegas(); },
         get livewire() { const id = this.$root.closest('[wire\\:id]')?.getAttribute('wire:id'); return id && window.Livewire ? window.Livewire.find(id) : null; },
@@ -121,6 +145,8 @@ window.ordenCompraProductosTable = window.ordenCompraProductosTable || function 
                 id_bodega: String(row.id_bodega ?? ''),
                 bodega: row.bodega ?? '',
                 producto_filtro: '',
+                showResultados: false,
+                highlightedIndex: -1,
                 codigo_producto: row.codigo_producto ?? '',
                 producto: row.producto ?? '',
                 unidad: row.unidad ?? 'UN',
@@ -131,7 +157,7 @@ window.ordenCompraProductosTable = window.ordenCompraProductosTable || function 
             }
         },
         rowImportKey(r){ return r.pedido_codigo && r.pedido_detalle_id ? `p:${r.pedido_codigo}:${r.pedido_detalle_id}` : null; },
-        applyServerRows(serverRows){ this.rows=(serverRows||[]).map(r=>this.normalizeRow(r)); this.rows.forEach(r=>this.searchProductos(r)); this.sync(); },
+        applyServerRows(serverRows){ this.rows=(serverRows||[]).map(r=>this.normalizeRow(r)); this.rows.forEach(r=>this.fillProductoFiltro(r)); this.sync(); },
         mergeServerRows(serverRows){
             const incoming=(serverRows||[]).map(r=>this.normalizeRow(r));
             const existingKeys = new Set(this.rows.map(r=>this.rowImportKey(r)).filter(Boolean));
@@ -139,20 +165,53 @@ window.ordenCompraProductosTable = window.ordenCompraProductosTable || function 
                 const k=this.rowImportKey(r);
                 if(!k || !existingKeys.has(k)){ this.rows.push(r); if(k) existingKeys.add(k); }
             }
-            this.rows.forEach(r=>this.searchProductos(r));
+            this.rows.forEach(r=>this.fillProductoFiltro(r));
             this.sync();
         },
         async loadBodegas(){ if(this.bodegas.length || !this.livewire) return; try{ this.bodegas = await this.livewire.call('fetchBodegas'); }catch(_){ this.bodegas=[]; } },
-        async searchProductos(row){ if(!this.livewire || !row.id_bodega) return; const list = await this.livewire.call('searchProductosPorBodega', row.id_bodega, row.producto_filtro || ''); this.productosPorFila[row._key]=list||[]; },
-        async onBodegaChange(row){ row.codigo_producto=''; row.producto=''; row.unidad='UN'; row.producto_filtro=''; await this.searchProductos(row); this.sync(); },
-        onProductoChange(row){
-            const p=(this.productosPorFila[row._key]||[]).find(x=>x.codigo===row.codigo_producto);
+        fillProductoFiltro(row){
+            row.producto_filtro = row.producto ? `${row.producto} (${row.codigo_producto || ''})`.trim() : '';
+        },
+        async searchProductos(row){
+            if(!this.livewire || !row.id_bodega){ this.productosPorFila[row._key]=[]; return; }
+            const list = await this.livewire.call('searchProductosPorBodega', row.id_bodega, row.producto_filtro || '');
+            this.productosPorFila[row._key]=list||[];
+            row.showResultados = true;
+            row.highlightedIndex = (this.productosPorFila[row._key] || []).length ? 0 : -1;
+        },
+        async onBodegaChange(row){
+            row.codigo_producto=''; row.producto=''; row.unidad='UN'; row.producto_filtro=''; row.showResultados=false; row.highlightedIndex=-1;
+            await this.searchProductos(row);
+            this.sync();
+        },
+        selectProducto(row, p){
             if(!p){ this.sync(); return; }
+            row.codigo_producto=p.codigo;
             row.producto=p.nombre;
             row.costo=this.n(p.costo);
             row.impuesto=String(Math.round(this.n(p.impuesto)));
             row.unidad=p.unidad || row.unidad || 'UN';
+            this.fillProductoFiltro(row);
+            row.showResultados = false;
+            row.highlightedIndex = -1;
             this.sync();
+        },
+        selectHighlighted(row){
+            const results = this.productosPorFila[row._key] || [];
+            const idx = row.highlightedIndex ?? -1;
+            if(idx >= 0 && results[idx]){ this.selectProducto(row, results[idx]); }
+        },
+        highlightNext(row){
+            const results = this.productosPorFila[row._key] || [];
+            if(!results.length) return;
+            row.showResultados = true;
+            row.highlightedIndex = Math.min((row.highlightedIndex ?? -1) + 1, results.length - 1);
+        },
+        highlightPrev(row){
+            const results = this.productosPorFila[row._key] || [];
+            if(!results.length) return;
+            row.showResultados = true;
+            row.highlightedIndex = Math.max((row.highlightedIndex ?? 0) - 1, 0);
         },
         descripcionItem(row){ if(row.es_auxiliar) return row.producto_auxiliar || row.producto || ''; return row.producto || ''; },
         addRow(){ this.rows.push(this.normalizeRow({})); this.sync(); },
@@ -175,12 +234,15 @@ window.ordenCompraProductosTable = window.ordenCompraProductosTable || function 
 
             const payload=this.rows.map(({_key,producto_filtro,...r})=>{ const base=Math.max(0,this.lineSubtotal(r)-this.n(r.descuento)); return {...r,id_bodega:this.n(r.id_bodega),bodega:r.bodega||String(r.id_bodega||''),valor_impuesto:(base*(this.n(r.impuesto)/100)).toFixed(6)}; });
             if(!this.livewire) return;
-            this.livewire.set('data.detalles',payload,false);
-            this.livewire.set('data.subtotal',subtotal.toFixed(2),false);
-            this.livewire.set('data.total_descuento',descuento.toFixed(2),false);
-            this.livewire.set('data.total_impuesto',impuesto.toFixed(2),false);
-            this.livewire.set('data.total',(subtotal-descuento+impuesto).toFixed(2),false);
-            this.livewire.set('data.resumen_totales',this.summary,false);
+            clearTimeout(this.syncTimer);
+            this.syncTimer = setTimeout(() => {
+                this.livewire.set('data.detalles',payload,false);
+                this.livewire.set('data.subtotal',subtotal.toFixed(2),false);
+                this.livewire.set('data.total_descuento',descuento.toFixed(2),false);
+                this.livewire.set('data.total_impuesto',impuesto.toFixed(2),false);
+                this.livewire.set('data.total',(subtotal-descuento+impuesto).toFixed(2),false);
+                this.livewire.set('data.resumen_totales',this.summary,false);
+            }, 40);
         }
     }
 }

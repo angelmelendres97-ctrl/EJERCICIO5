@@ -396,6 +396,7 @@ class CreateOrdenCompra extends CreateRecord
                         ->on('prod_cod_empr', '=', 'prbo_cod_empr')
                         ->on('prod_cod_sucu', '=', 'prbo_cod_sucu');
                 })
+                ->leftJoin('saeunid', 'prbo_cod_unid', '=', 'unid_cod_unid')
                 ->where('prod_cod_empr', $amdgEmpresa)
                 ->where('prod_cod_sucu', $amdgSucursal)
                 ->where('prbo_cod_bode', $bodegaId)
@@ -413,6 +414,7 @@ class CreateOrdenCompra extends CreateRecord
                     'prbo_uco_prod',
                     'prbo_iva_porc',
                     'prbo_cod_unid',
+                    'unid_nom_unid',
                 ])
                 ->map(fn($r) => [
                     'codigo' => (string) $r->prod_cod_prod,
@@ -420,7 +422,7 @@ class CreateOrdenCompra extends CreateRecord
                     'label' => trim(((string) $r->prod_nom_prod) . ' (' . ((string) $r->prod_cod_prod) . ')'),
                     'costo' => (float) ($r->prbo_uco_prod ?? 0),
                     'impuesto' => (float) ($r->prbo_iva_porc ?? 0),
-                    'unidad' => (string) ($r->prbo_cod_unid ?? 'UN'),
+                    'unidad' => (string) ($r->unid_nom_unid ?? $r->prbo_cod_unid ?? 'UN'),
                 ])
                 ->all();
         } catch (\Throwable $e) {
