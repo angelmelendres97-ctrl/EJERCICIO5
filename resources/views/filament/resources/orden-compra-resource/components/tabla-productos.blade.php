@@ -113,15 +113,15 @@
         </table>
     </div>
 
-    <div class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 p-4" x-show="productoModal.open"
+    <div class="fixed inset-0 z-[9999] flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:items-center" x-show="productoModal.open"
         x-transition.opacity x-cloak>
-        <div class="w-full max-w-4xl rounded-xl bg-white shadow-xl dark:bg-gray-900" @click.outside="closeProductoModal()">
+        <div class="my-6 flex max-h-[90vh] w-full max-w-4xl flex-col rounded-xl bg-white shadow-xl dark:bg-gray-900" @click.outside="closeProductoModal()">
             <div class="border-b p-4 dark:border-gray-700">
                 <h3 class="text-sm font-semibold">Seleccionar producto</h3>
                 <p class="text-xs text-gray-500">Bodega: <span x-text="productoModal.bodegaNombre || 'No seleccionada'"></span></p>
             </div>
 
-            <div class="p-4 space-y-3">
+            <div class="flex-1 overflow-y-auto p-4 space-y-3">
                 <input class="fi-input w-full" placeholder="Buscar por nombre o código..." x-model="productoModal.term"
                     @input.debounce.250ms="searchProductosModal()" @keydown.escape.stop="closeProductoModal()" />
 
@@ -197,6 +197,18 @@
             get livewire() {
                 const id = this.$root.closest('[wire\\:id]')?.getAttribute('wire:id');
                 return id && window.Livewire ? window.Livewire.find(id) : null;
+            },
+            normalizeBodegaId(value) {
+                const raw = String(value ?? '').trim();
+                if (!raw) return '';
+                const withoutZeros = raw.replace(/^0+/, '');
+                return withoutZeros === '' ? '0' : withoutZeros;
+            },
+            isSameBodega(a, b) {
+                const left = String(a ?? '').trim();
+                const right = String(b ?? '').trim();
+                if (!left || !right) return false;
+                return left === right || this.normalizeBodegaId(left) === this.normalizeBodegaId(right);
             },
             n(v) {
                 const x = Number(v);
@@ -274,7 +286,7 @@
                     this.bodegasContext = `${ctx.empresa}-${ctx.amdgEmpresa}-${ctx.amdgSucursal}`;
                     this.rows.forEach((row) => {
                         if (!row.id_bodega) return;
-                        const selected = this.bodegas.find(b => String(b.id).trim() === String(row.id_bodega).trim());
+                        const selected = this.bodegas.find(b => this.isSameBodega(b.id, row.id_bodega));
                         if (selected) {
                             row.id_bodega = String(selected.id);
                             row.bodega = selected.nombre;
@@ -307,7 +319,7 @@
             async openProductoModal(row) {
                 await this.ensureBodegasLoaded();
                 if (!row.id_bodega) return;
-                const selected = this.bodegas.find(b => String(b.id).trim() === String(row.id_bodega).trim());
+                const selected = this.bodegas.find(b => this.isSameBodega(b.id, row.id_bodega));
                 this.productoModal = {
                     open: true,
                     rowKey: row._key,
@@ -344,7 +356,7 @@
                 row.producto_filtro = '';
                 row.showResultados = false;
                 row.highlightedIndex = -1;
-                const selected = this.bodegas.find(b => String(b.id).trim() === String(row.id_bodega).trim());
+                const selected = this.bodegas.find(b => this.isSameBodega(b.id, row.id_bodega));
                 row.bodega = selected ? selected.nombre : '';
                 await this.searchProductos(row);
                 this.sync();
@@ -385,7 +397,7 @@
                 row.highlightedIndex = Math.max((row.highlightedIndex ?? 0) - 1, 0);
             },
             descripcionItem(row) {
-                if (row.es_auxiliar) return row.descripcion_auxiliar || row.producto_auxiliar || row.producto || '';
+                if (row.es_auxiliar) return row.producto_auxiliar || row.descripcion_auxiliar || row.producto || '';
                 return row.producto || '';
             },
             addRow() {
@@ -445,7 +457,7 @@
                     const base = Math.max(0, this.lineSubtotal(r) - this.n(r.descuento));
                     return {
                         ...r,
-                        id_bodega: this.n(r.id_bodega),
+                        id_bodega: String(r.id_bodega ?? '').trim(),
                         bodega: r.bodega || String(r.id_bodega || ''),
                         valor_impuesto: (base * (this.n(r.impuesto) / 100)).toFixed(6)
                     };
