@@ -4,7 +4,7 @@
 
 <div wire:ignore x-data="ordenCompraProductosTable(@js($rows))" x-init="init()"
     x-on:oc-detalles-sync.window="if ($event.detail?.detalles) mergeServerRows($event.detail.detalles)" class="space-y-4">
-    <div class="overflow-x-auto border rounded-xl border-gray-200 dark:border-gray-700">
+    <div class="overflow-x-auto overflow-y-visible border rounded-xl border-gray-200 dark:border-gray-700">
         <table class="w-full text-xs">
             <thead class="bg-gray-100 dark:bg-gray-800">
                 <tr>
@@ -37,7 +37,8 @@
                         </td>
 
                         <td class="p-1">
-                            <select class="fi-select w-18" x-model="row.id_bodega" @change="onBodegaChange(row)">
+                            <select class="fi-select w-28" x-model="row.id_bodega" @focus="ensureBodegasLoaded()"
+                                @click="ensureBodegasLoaded()" @change="onBodegaChange(row)">
                                 <option value="">Seleccione</option>
                                 <template x-for="b in bodegas" :key="b.id">
                                     <option :value="String(b.id)" x-text="b.nombre"></option>
@@ -47,15 +48,15 @@
 
                         <td class="p-1">
                             <div class="relative">
-                                <input class="fi-input w-18" placeholder="Buscar producto..."
+                                <input class="fi-input w-28" placeholder="Buscar producto..."
                                     x-model="row.producto_filtro"
                                     @focus="
                                         row.showResultados = true;
-                                        if (!(productosPorFila[row._key] || []).length) searchProductos(row);
+                                        searchProductos(row);
                                     "
                                                                     @click="
                                         row.showResultados = true;
-                                        if (!(productosPorFila[row._key] || []).length) searchProductos(row);
+                                        searchProductos(row);
                                     "
                                                                     @input.debounce.250ms="searchProductos(row)"
                                     @keydown.enter.prevent="selectHighlighted(row)"
@@ -64,17 +65,21 @@
                                     @keydown.escape.stop="row.showResultados = false" />
 
 
-                                <div class="absolute z-20 mt-1 w-full rounded-lg border bg-white shadow-lg dark:border-gray-700 dark:bg-gray-900"
-                                    x-show="row.showResultados && (productosPorFila[row._key] || []).length"
-                                    @click.outside="row.showResultados = false">
-                                    <template x-for="(p, pIdx) in (productosPorFila[row._key] || [])"
-                                        :key="`${p.codigo}-${p.label}`">
-                                        <button type="button"
-                                            class="block w-full px-3 py-2 text-left text-xs hover:bg-gray-100 dark:hover:bg-gray-800"
-                                            :class="{ 'bg-gray-100 dark:bg-gray-800': pIdx === (row.highlightedIndex ?? -1) }"
-                                            @mouseenter="row.highlightedIndex = pIdx" @click="selectProducto(row, p)"
-                                            x-text="p.label"></button>
-                                    </template>
+                                <div class="absolute z-50 mt-1 w-[26rem] max-w-[70vw] rounded-lg border bg-white shadow-lg dark:border-gray-700 dark:bg-gray-900"
+                                    x-show="row.showResultados" @click.outside="row.showResultados = false">
+                                    <div class="max-h-64 overflow-y-auto" x-show="(productosPorFila[row._key] || []).length">
+                                        <template x-for="(p, pIdx) in (productosPorFila[row._key] || [])"
+                                            :key="`${p.codigo}-${p.label}`">
+                                            <button type="button"
+                                                class="block w-full px-3 py-2 text-left text-xs hover:bg-gray-100 dark:hover:bg-gray-800"
+                                                :class="{ 'bg-gray-100 dark:bg-gray-800': pIdx === (row.highlightedIndex ?? -1) }"
+                                                @mouseenter="row.highlightedIndex = pIdx" @click="selectProducto(row, p)"
+                                                x-text="p.label"></button>
+                                        </template>
+                                    </div>
+                                    <p class="px-3 py-2 text-xs text-gray-500" x-show="!(productosPorFila[row._key] || []).length">
+                                        No hay coincidencias.
+                                    </p>
                                 </div>
                             </div>
                         </td>
@@ -107,9 +112,9 @@
         </table>
     </div>
 
-    <div class="flex justify-end">
-        <button type="button" class="fi-btn fi-btn-size-sm fi-btn-color-primary" @click="addRow()">Agregar
-            producto</button>
+    <div class="flex justify-start">
+        <button type="button" class="fi-btn fi-btn-size-sm fi-btn-color-primary font-bold" @click="addRow()">+
+            Agregar producto</button>
     </div>
 
     <div class="ml-auto w-full max-w-md border rounded-xl border-gray-200 dark:border-gray-700 p-3">
@@ -148,6 +153,8 @@
             rows: [],
             bodegas: [],
             productosPorFila: {},
+            latestSearchToken: {},
+            bodegasContext: null,
             syncTimer: null,
             summary: {
                 subtotal: 0,
@@ -161,6 +168,20 @@
             init() {
                 this.applyServerRows(initialRows || []);
                 this.loadBodegas();
+            },
+            getCurrentContext() {
+                return {
+                    empresa: String(this.livewire?.get('data.id_empresa') ?? ''),
+                    amdgEmpresa: String(this.livewire?.get('data.amdg_id_empresa') ?? ''),
+                    amdgSucursal: String(this.livewire?.get('data.amdg_id_sucursal') ?? ''),
+                };
+            },
+            async ensureBodegasLoaded() {
+                const ctx = this.getCurrentContext();
+                const contextKey = `${ctx.empresa}-${ctx.amdgEmpresa}-${ctx.amdgSucursal}`;
+                if (this.bodegasContext !== contextKey || !this.bodegas.length) {
+                    await this.loadBodegas(true);
+                }
             },
             get livewire() {
                 const id = this.$root.closest('[wire\\:id]')?.getAttribute('wire:id');
@@ -232,10 +253,20 @@
                 this.rows.forEach(r => this.fillProductoFiltro(r));
                 this.sync();
             },
-            async loadBodegas() {
-                if (this.bodegas.length || !this.livewire) return;
+            async loadBodegas(force = false) {
+                if (!this.livewire) return;
+                if (!force && this.bodegas.length) return;
                 try {
                     this.bodegas = await this.livewire.call('fetchBodegas');
+                    const ctx = this.getCurrentContext();
+                    this.bodegasContext = `${ctx.empresa}-${ctx.amdgEmpresa}-${ctx.amdgSucursal}`;
+                    this.rows.forEach((row) => {
+                        if (!row.id_bodega) return;
+                        const selected = this.bodegas.find(b => String(b.id) === String(row.id_bodega));
+                        if (selected) {
+                            row.bodega = selected.nombre;
+                        }
+                    });
                 } catch (_) {
                     this.bodegas = [];
                 }
@@ -244,12 +275,18 @@
                 row.producto_filtro = row.producto ? `${row.producto} (${row.codigo_producto || ''})`.trim() : '';
             },
             async searchProductos(row) {
+                await this.ensureBodegasLoaded();
                 if (!this.livewire || !row.id_bodega) {
                     this.productosPorFila[row._key] = [];
+                    row.showResultados = true;
                     return;
                 }
-                const list = await this.livewire.call('searchProductosPorBodega', row.id_bodega, row
-                    .producto_filtro || '');
+                const token = (this.latestSearchToken[row._key] || 0) + 1;
+                this.latestSearchToken[row._key] = token;
+                const list = await this.livewire.call('searchProductosPorBodega', row.id_bodega, row.producto_filtro || '');
+                if (this.latestSearchToken[row._key] !== token) {
+                    return;
+                }
                 this.productosPorFila[row._key] = list || [];
                 row.showResultados = true;
                 row.highlightedIndex = (this.productosPorFila[row._key] || []).length ? 0 : -1;
@@ -261,6 +298,8 @@
                 row.producto_filtro = '';
                 row.showResultados = false;
                 row.highlightedIndex = -1;
+                const selected = this.bodegas.find(b => String(b.id) === String(row.id_bodega));
+                row.bodega = selected ? selected.nombre : '';
                 await this.searchProductos(row);
                 this.sync();
             },

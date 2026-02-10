@@ -700,7 +700,7 @@ class EditOrdenCompra extends EditRecord
         $amdgEmpresa = $this->data['amdg_id_empresa'] ?? null;
         $amdgSucursal = $this->data['amdg_id_sucursal'] ?? null;
 
-        if (!$empresaId || !$amdgEmpresa || !$amdgSucursal) {
+        if (!$empresaId || !$amdgEmpresa) {
             return [];
         }
 
@@ -719,7 +719,7 @@ class EditOrdenCompra extends EditRecord
             if ($schema->hasColumn('saebode', 'bode_cod_empr')) {
                 $query->where('bode_cod_empr', $amdgEmpresa);
             }
-            if ($schema->hasColumn('saebode', 'bode_cod_sucu')) {
+            if ($amdgSucursal && $schema->hasColumn('saebode', 'bode_cod_sucu')) {
                 $query->where('bode_cod_sucu', $amdgSucursal);
             }
 
