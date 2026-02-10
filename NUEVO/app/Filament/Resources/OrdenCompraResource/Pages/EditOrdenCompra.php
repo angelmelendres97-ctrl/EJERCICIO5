@@ -774,15 +774,28 @@ class EditOrdenCompra extends EditRecord
             }
 
             $query = DB::connection($connectionName)->table('saebode');
+
+            if ($schema->hasTable('saesubo')) {
+                $query
+                    ->join('saesubo', 'subo_cod_bode', '=', 'bode_cod_bode')
+                    ->where('subo_cod_empr', $amdgEmpresa);
+
+                if ($amdgSucursal) {
+                    $query->where('subo_cod_sucu', $amdgSucursal);
+                }
+            }
+
             if ($schema->hasColumn('saebode', 'bode_cod_empr')) {
                 $query->where('bode_cod_empr', $amdgEmpresa);
             }
+
             if ($amdgSucursal && $schema->hasColumn('saebode', 'bode_cod_sucu')) {
                 $query->where('bode_cod_sucu', $amdgSucursal);
             }
 
             return $query
                 ->select(['bode_cod_bode', 'bode_nom_bode'])
+                ->distinct()
                 ->orderBy('bode_nom_bode')
                 ->limit(500)
                 ->get()
