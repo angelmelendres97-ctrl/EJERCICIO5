@@ -145,6 +145,23 @@ class OrdenCompraResource extends Resource
         $set('resumen_totales', $resumen);
     }
 
+    protected static function parseDecimalInput(mixed $state, float $default = 0): float
+    {
+        if ($state === null || $state === '') {
+            return $default;
+        }
+
+        $normalized = str_replace(',', '.', trim((string) $state));
+
+        return is_numeric($normalized) ? (float) $normalized : $default;
+    }
+
+    protected static function normalizeDecimalForField(Set $set, string $field, mixed $state, int $decimals = 6, float $default = 0): void
+    {
+        $value = self::parseDecimalInput($state, $default);
+        $set($field, number_format($value, $decimals, '.', ''));
+    }
+
 
     public static function normalizePedidosImportados(array|string|null $pedidos): array
     {
@@ -991,17 +1008,21 @@ class OrdenCompraResource extends Resource
                                         Forms\Components\Hidden::make('producto'),
 
                                         Forms\Components\TextInput::make('cantidad')
-                                            ->numeric()
                                             ->required()
                                             ->live(onBlur: true)
-                                            ->default(1)
-                                            ->afterStateUpdated(fn(Get $get, Set $set) => self::syncTotales($get, $set))
+                                            ->default('1.000000')
                                             ->extraInputAttributes([
                                                 'x-ref' => 'cantidad',
+                                                'inputmode' => 'decimal',
                                             ])
+                                            ->rule('regex:/^\d+(\.\d{0,6})?$/')
+                                            ->afterStateUpdated(function (?string $state, Get $get, Set $set): void {
+                                                self::normalizeDecimalForField($set, 'cantidad', $state, 6, 1);
+                                                self::syncTotales($get, $set);
+                                            })
+                                            ->dehydrateStateUsing(fn($state) => self::parseDecimalInput($state, 1))
                                             ->helperText(fn(Get $get) => filled($get('unidad')) ? 'Unidad: ' . $get('unidad') : null)
                                             ->columnSpan(['default' => 12, 'lg' => 1]),
-
                                         Forms\Components\TextInput::make('costo')
                                             ->label('Costo')
                                             ->required()
@@ -1010,51 +1031,30 @@ class OrdenCompraResource extends Resource
                                             ->extraInputAttributes([
                                                 'x-ref' => 'costo',
                                                 'inputmode' => 'decimal',
-                                                'oninput' => "let v=this.value
-        .replace(/[^0-9.]/g,'')          // solo números y punto
-        .replace(/(\\..*)\\./g,'$1');    // solo 1 punto
-
-        // limitar a 6 decimales
-        if (v.includes('.')) {
-            const parts = v.split('.');
-            parts[0] = parts[0].replace(/^0+(?=\\d)/,''); // opcional: quita ceros a la izquierda
-            parts[1] = (parts[1] || '').slice(0,6);
-            v = parts[0] + '.' + parts[1];
-        }
-        this.value = v;",
                                             ])
                                             ->rule('regex:/^\d+(\.\d{0,6})?$/')
-                                            ->rule('regex:/^\d+(\.\d{0,6})?$/') // valida backend
-                                            ->dehydrateStateUsing(fn($state) => $state === '' || $state === null ? 0 : (float) $state)
-                                            ->afterStateUpdated(fn(Get $get, Set $set) => self::syncTotales($get, $set))
+                                            ->dehydrateStateUsing(fn($state) => self::parseDecimalInput($state))
+                                            ->afterStateUpdated(function (?string $state, Get $get, Set $set): void {
+                                                self::normalizeDecimalForField($set, 'costo', $state);
+                                                self::syncTotales($get, $set);
+                                            })
                                             ->columnSpan(['default' => 12, 'lg' => 2]),
-
                                         Forms\Components\TextInput::make('descuento')
                                             ->label('Descuento')
                                             ->required()
-                                            ->default(0)
+                                            ->default('0.000000')
                                             ->prefix('$')
                                             ->live(onBlur: true)
                                             ->extraInputAttributes([
                                                 'x-ref' => 'descuento',
                                                 'inputmode' => 'decimal',
-                                                'oninput' => "let v=this.value
-        .replace(/[^0-9.]/g,'')          // solo números y punto
-        .replace(/(\\..*)\\./g,'$1');    // solo 1 punto
-
-        // limitar a 6 decimales
-        if (v.includes('.')) {
-            const parts = v.split('.');
-            parts[0] = parts[0].replace(/^0+(?=\\d)/,''); // opcional: quita ceros a la izquierda
-            parts[1] = (parts[1] || '').slice(0,6);
-            v = parts[0] + '.' + parts[1];
-        }
-        this.value = v;",
                                             ])
                                             ->rule('regex:/^\d+(\.\d{0,6})?$/')
-                                            ->rule('regex:/^\d+(\.\d{0,6})?$/')
-                                            ->dehydrateStateUsing(fn($state) => $state === '' || $state === null ? 0 : (float) $state)
-                                            ->afterStateUpdated(fn(Get $get, Set $set) => self::syncTotales($get, $set))
+                                            ->dehydrateStateUsing(fn($state) => self::parseDecimalInput($state))
+                                            ->afterStateUpdated(function (?string $state, Get $get, Set $set): void {
+                                                self::normalizeDecimalForField($set, 'descuento', $state);
+                                                self::syncTotales($get, $set);
+                                            })
                                             ->columnSpan(['default' => 12, 'lg' => 2]),
                                         Forms\Components\Placeholder::make('subtotal_linea')
                                             ->label('Subtotal')
