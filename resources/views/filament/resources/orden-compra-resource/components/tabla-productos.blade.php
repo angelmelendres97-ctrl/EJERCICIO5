@@ -47,41 +47,8 @@
                         </td>
 
                         <td class="p-1">
-                            <div class="relative">
-                                <input class="fi-input w-28" placeholder="Buscar producto..."
-                                    x-model="row.producto_filtro"
-                                    @focus="
-                                        row.showResultados = true;
-                                        searchProductos(row);
-                                    "
-                                                                    @click="
-                                        row.showResultados = true;
-                                        searchProductos(row);
-                                    "
-                                                                    @input.debounce.250ms="searchProductos(row)"
-                                    @keydown.enter.prevent="selectHighlighted(row)"
-                                    @keydown.arrow-down.prevent="highlightNext(row)"
-                                    @keydown.arrow-up.prevent="highlightPrev(row)"
-                                    @keydown.escape.stop="row.showResultados = false" />
-
-
-                                <div class="absolute z-50 mt-1 w-[26rem] max-w-[70vw] rounded-lg border bg-white shadow-lg dark:border-gray-700 dark:bg-gray-900"
-                                    x-show="row.showResultados" @click.outside="row.showResultados = false">
-                                    <div class="max-h-64 overflow-y-auto" x-show="(productosPorFila[row._key] || []).length">
-                                        <template x-for="(p, pIdx) in (productosPorFila[row._key] || [])"
-                                            :key="`${p.codigo}-${p.label}`">
-                                            <button type="button"
-                                                class="block w-full px-3 py-2 text-left text-xs hover:bg-gray-100 dark:hover:bg-gray-800"
-                                                :class="{ 'bg-gray-100 dark:bg-gray-800': pIdx === (row.highlightedIndex ?? -1) }"
-                                                @mouseenter="row.highlightedIndex = pIdx" @click="selectProducto(row, p)"
-                                                x-text="p.label"></button>
-                                        </template>
-                                    </div>
-                                    <p class="px-3 py-2 text-xs text-gray-500" x-show="!(productosPorFila[row._key] || []).length">
-                                        No hay coincidencias.
-                                    </p>
-                                </div>
-                            </div>
+                            <input class="fi-input w-28 cursor-pointer" placeholder="Seleccionar producto..."
+                                x-model="row.producto_filtro" readonly @click="openProductoModal(row)" />
                         </td>
 
                         <td class="p-1"><input class="fi-input w-28" x-model="row.codigo_producto" readonly></td>
@@ -145,6 +112,43 @@
             </tr>
         </table>
     </div>
+
+    <div class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 p-4" x-show="productoModal.open"
+        x-transition.opacity x-cloak>
+        <div class="w-full max-w-3xl max-h-[90vh] overflow-hidden rounded-xl bg-white shadow-xl dark:bg-gray-900"
+            @click.outside="closeProductoModal()">
+            <div class="border-b p-4 dark:border-gray-700">
+                <h3 class="text-sm font-semibold">Seleccionar producto</h3>
+                <p class="text-xs text-gray-500">Bodega: <span x-text="productoModal.bodegaNombre || 'No seleccionada'"></span></p>
+            </div>
+
+            <div class="p-4 space-y-3">
+                <input class="fi-input w-full" placeholder="Buscar por nombre o código..." x-model="productoModal.term"
+                    @input.debounce.250ms="searchProductosModal()" @keydown.escape.stop="closeProductoModal()" />
+
+                <div class="max-h-[60vh] overflow-y-auto rounded-lg border dark:border-gray-700">
+                    <template x-if="productoModal.loading">
+                        <p class="px-3 py-2 text-xs text-gray-500">Cargando...</p>
+                    </template>
+
+                    <template x-if="!productoModal.loading && (productoModal.results || []).length === 0">
+                        <p class="px-3 py-2 text-xs text-gray-500">No hay coincidencias.</p>
+                    </template>
+
+                    <template x-for="p in (productoModal.results || [])" :key="`${p.codigo}-${p.label}`">
+                        <button type="button" class="block w-full border-b px-3 py-2 text-left text-xs hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"
+                            @click="selectProductoFromModal(p)">
+                            <span x-text="p.label"></span>
+                        </button>
+                    </template>
+                </div>
+            </div>
+
+            <div class="flex justify-end border-t p-3 dark:border-gray-700">
+                <button type="button" class="fi-btn fi-btn-size-sm" @click="closeProductoModal()">Cerrar</button>
+            </div>
+        </div>
+    </div>
 </div>
 
 <script>
@@ -164,6 +168,14 @@
                 basePorIva: {},
                 ivaPorIva: {},
                 tarifas: []
+            },
+            productoModal: {
+                open: false,
+                rowKey: null,
+                term: '',
+                results: [],
+                loading: false,
+                bodegaNombre: '',
             },
             init() {
                 this.applyServerRows(initialRows || []);
@@ -224,6 +236,7 @@
                     highlightedIndex: -1,
                     codigo_producto: row.codigo_producto ?? '',
                     producto: row.producto ?? '',
+                    descripcion_auxiliar: row.descripcion_auxiliar ?? '',
                     unidad: row.unidad ?? 'UN',
                     cantidad: this.n(row.cantidad ?? 1),
                     costo: this.n(row.costo ?? 0),
@@ -239,6 +252,7 @@
                 this.rows = (serverRows || []).map(r => this.normalizeRow(r));
                 this.rows.forEach(r => this.fillProductoFiltro(r));
                 this.sync();
+                this.ensureBodegasLoaded();
             },
             mergeServerRows(serverRows) {
                 const incoming = (serverRows || []).map(r => this.normalizeRow(r));
@@ -252,6 +266,7 @@
                 }
                 this.rows.forEach(r => this.fillProductoFiltro(r));
                 this.sync();
+                this.ensureBodegasLoaded();
             },
             async loadBodegas(force = false) {
                 if (!this.livewire) return;
@@ -262,8 +277,9 @@
                     this.bodegasContext = `${ctx.empresa}-${ctx.amdgEmpresa}-${ctx.amdgSucursal}`;
                     this.rows.forEach((row) => {
                         if (!row.id_bodega) return;
-                        const selected = this.bodegas.find(b => String(b.id) === String(row.id_bodega));
+                        const selected = this.bodegas.find(b => String(b.id).trim() === String(row.id_bodega).trim());
                         if (selected) {
+                            row.id_bodega = String(selected.id);
                             row.bodega = selected.nombre;
                         }
                     });
@@ -291,6 +307,39 @@
                 row.showResultados = true;
                 row.highlightedIndex = (this.productosPorFila[row._key] || []).length ? 0 : -1;
             },
+            async openProductoModal(row) {
+                await this.ensureBodegasLoaded();
+                if (!row.id_bodega) return;
+                const selected = this.bodegas.find(b => String(b.id).trim() === String(row.id_bodega).trim());
+                this.productoModal = {
+                    open: true,
+                    rowKey: row._key,
+                    term: row.producto_filtro || '',
+                    results: [],
+                    loading: false,
+                    bodegaNombre: selected?.nombre || '',
+                };
+                await this.searchProductosModal();
+            },
+            closeProductoModal() {
+                this.productoModal.open = false;
+            },
+            async searchProductosModal() {
+                if (!this.productoModal.open) return;
+                const row = this.rows.find(r => r._key === this.productoModal.rowKey);
+                if (!row) return;
+                this.productoModal.loading = true;
+                row.producto_filtro = this.productoModal.term;
+                await this.searchProductos(row);
+                this.productoModal.results = this.productosPorFila[row._key] || [];
+                this.productoModal.loading = false;
+            },
+            selectProductoFromModal(p) {
+                const row = this.rows.find(r => r._key === this.productoModal.rowKey);
+                if (!row) return;
+                this.selectProducto(row, p);
+                this.closeProductoModal();
+            },
             async onBodegaChange(row) {
                 row.codigo_producto = '';
                 row.producto = '';
@@ -298,7 +347,7 @@
                 row.producto_filtro = '';
                 row.showResultados = false;
                 row.highlightedIndex = -1;
-                const selected = this.bodegas.find(b => String(b.id) === String(row.id_bodega));
+                const selected = this.bodegas.find(b => String(b.id).trim() === String(row.id_bodega).trim());
                 row.bodega = selected ? selected.nombre : '';
                 await this.searchProductos(row);
                 this.sync();
@@ -313,6 +362,7 @@
                 row.costo = this.n(p.costo);
                 row.impuesto = String(Math.round(this.n(p.impuesto)));
                 row.unidad = p.unidad || row.unidad || 'UN';
+                row.descripcion_auxiliar = '';
                 this.fillProductoFiltro(row);
                 row.showResultados = false;
                 row.highlightedIndex = -1;
@@ -338,7 +388,7 @@
                 row.highlightedIndex = Math.max((row.highlightedIndex ?? 0) - 1, 0);
             },
             descripcionItem(row) {
-                if (row.es_auxiliar) return row.producto_auxiliar || row.producto || '';
+                if (row.es_auxiliar) return row.descripcion_auxiliar || row.producto_auxiliar || row.producto || '';
                 return row.producto || '';
             },
             addRow() {
