@@ -754,12 +754,30 @@ class EditOrdenCompra extends EditRecord
         }
 
         try {
+            $schema = DB::connection($connectionName)->getSchemaBuilder();
+
+            $unidadSubquery = DB::connection($connectionName)
+                ->table('saeunid')
+                ->select([
+                    'unid_cod_unid',
+                    DB::raw('MAX(unid_nom_unid) as unid_nom_unid'),
+                    DB::raw('MAX(unid_sigl_unid) as unid_sigl_unid'),
+                ])
+                ->when(
+                    $schema->hasColumn('saeunid', 'unid_cod_empr'),
+                    fn($q) => $q->where('unid_cod_empr', $amdgEmpresa)
+                )
+                ->groupBy('unid_cod_unid');
+
             return DB::connection($connectionName)
                 ->table('saeprod')
                 ->join('saeprbo', function ($join) {
                     $join->on('prod_cod_prod', '=', 'prbo_cod_prod')
                         ->on('prod_cod_empr', '=', 'prbo_cod_empr')
                         ->on('prod_cod_sucu', '=', 'prbo_cod_sucu');
+                })
+                ->leftJoinSub($unidadSubquery, 'u', function ($join) {
+                    $join->on('u.unid_cod_unid', '=', 'prbo_cod_unid');
                 })
                 ->where('prod_cod_empr', $amdgEmpresa)
                 ->where('prod_cod_sucu', $amdgSucursal)
@@ -778,6 +796,8 @@ class EditOrdenCompra extends EditRecord
                     'prbo_uco_prod',
                     'prbo_iva_porc',
                     'prbo_cod_unid',
+                    'u.unid_nom_unid',
+                    'u.unid_sigl_unid',
                 ])
                 ->map(fn($r) => [
                     'codigo' => (string) $r->prod_cod_prod,
@@ -785,7 +805,7 @@ class EditOrdenCompra extends EditRecord
                     'label' => trim(((string) $r->prod_nom_prod) . ' (' . ((string) $r->prod_cod_prod) . ')'),
                     'costo' => (float) ($r->prbo_uco_prod ?? 0),
                     'impuesto' => (float) ($r->prbo_iva_porc ?? 0),
-                    'unidad' => (string) ($r->prbo_cod_unid ?? 'UN'),
+                    'unidad' => (string) ($r->unid_sigl_unid ?? $r->unid_nom_unid ?? $r->prbo_cod_unid ?? 'UN'),
                 ])
                 ->all();
         } catch (\Throwable $e) {
