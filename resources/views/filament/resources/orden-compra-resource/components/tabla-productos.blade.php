@@ -8,10 +8,10 @@
             <thead class="bg-gray-100 dark:bg-gray-800">
                 <tr>
                     <th class="p-2 w-10"></th>
-                    <th class="p-2 min-w-44">Bodega</th>
+                    <th class="p-2 min-w-56">Bodega</th>
                     <th class="p-2 min-w-56">Producto</th>
                     <th class="p-2">Código</th>
-                    <th class="p-2 min-w-64">Descripción</th>
+                    <th class="p-2 min-w-72">Descripción</th>
                     <th class="p-2">Unidad</th>
                     <th class="p-2">Cant.</th>
                     <th class="p-2">Costo</th>
@@ -42,22 +42,47 @@
                         </td>
 
                         <td class="p-1">
-                            <input class="fi-input mb-1" placeholder="Buscar producto..." x-model="row.producto_filtro" @input.debounce.250ms="searchProductos(row)">
-                            <select class="fi-select w-full" x-model="row.codigo_producto" @change="onProductoChange(row)">
-                                <option value="">Seleccione</option>
-                                <template x-for="p in (productosPorFila[row._key] || [])" :key="`${p.codigo}-${p.label}`">
-                                    <option :value="p.codigo" x-text="p.label"></option>
-                                </template>
-                            </select>
+                            <div class="relative">
+                                <input
+                                    class="fi-input w-full"
+                                    placeholder="Buscar producto..."
+                                    x-model="row.producto_filtro"
+                                    @focus="openProductoDropdown(row)"
+                                    @input.debounce.200ms="onProductoInput(row)"
+                                    @keydown.arrow-down.prevent="moveProductoHighlight(row, 1)"
+                                    @keydown.arrow-up.prevent="moveProductoHighlight(row, -1)"
+                                    @keydown.enter.prevent="selectHighlightedProducto(row)"
+                                    @keydown.escape.prevent="closeProductoDropdown(row)"
+                                >
+                                <div
+                                    x-show="isProductoDropdownOpen(row)"
+                                    x-transition
+                                    @click.outside="closeProductoDropdown(row)"
+                                    class="absolute z-20 mt-1 w-full rounded-md border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900"
+                                >
+                                    <template x-if="(productosPorFila[row._key] || []).length === 0">
+                                        <div class="px-3 py-2 text-xs text-gray-500">Sin resultados</div>
+                                    </template>
+                                    <template x-for="(p, suggestionIdx) in (productosPorFila[row._key] || [])" :key="`${p.codigo}-${p.label}`">
+                                        <button
+                                            type="button"
+                                            class="block w-full px-3 py-2 text-left text-xs hover:bg-gray-100 dark:hover:bg-gray-800"
+                                            :class="{ 'bg-gray-100 dark:bg-gray-800': highlightedProductoIndex[row._key] === suggestionIdx }"
+                                            @mousedown.prevent="selectProducto(row, p)"
+                                            x-text="p.label"
+                                        ></button>
+                                    </template>
+                                </div>
+                            </div>
                         </td>
 
                         <td class="p-1"><input class="fi-input w-28" x-model="row.codigo_producto" readonly></td>
                         <td class="p-1"><input class="fi-input w-full" :value="descripcionItem(row)" readonly></td>
                         <td class="p-1"><input class="fi-input w-20" x-model="row.unidad" readonly></td>
 
-                        <td class="p-1"><input type="number" step="0.000001" class="fi-input w-24" x-model="row.cantidad" @input="sync()"></td>
-                        <td class="p-1"><input type="number" step="0.000001" class="fi-input w-24" x-model="row.costo" @input="sync()"></td>
-                        <td class="p-1"><input type="number" step="0.000001" class="fi-input w-24" x-model="row.descuento" @input="sync()"></td>
+                        <td class="p-1"><input type="number" step="0.000001" class="fi-input w-20" x-model="row.cantidad" @input="sync()"></td>
+                        <td class="p-1"><input type="number" step="0.000001" class="fi-input w-20" x-model="row.costo" @input="sync()"></td>
+                        <td class="p-1"><input type="number" step="0.000001" class="fi-input w-20" x-model="row.descuento" @input="sync()"></td>
                         <td class="p-1">
                             <select class="fi-select w-20" x-model="row.impuesto" @change="sync()">
                                 <option value="0">0%</option><option value="5">5%</option><option value="8">8%</option><option value="15">15%</option><option value="18">18%</option>
@@ -100,7 +125,7 @@
 <script>
 window.ordenCompraProductosTable = window.ordenCompraProductosTable || function (initialRows) {
     return {
-        rows: [], bodegas: [], productosPorFila: {},
+        rows: [], bodegas: [], productosPorFila: {}, productoDropdownOpen: {}, highlightedProductoIndex: {},
         summary: { subtotal: 0, descuento: 0, impuesto: 0, total: 0, basePorIva: {}, ivaPorIva: {}, tarifas: [] },
         init() { this.applyServerRows(initialRows || []); this.loadBodegas(); },
         get livewire() { const id = this.$root.closest('[wire\\:id]')?.getAttribute('wire:id'); return id && window.Livewire ? window.Livewire.find(id) : null; },
@@ -127,7 +152,7 @@ window.ordenCompraProductosTable = window.ordenCompraProductosTable || function 
                 cantidad: this.n(row.cantidad ?? 1),
                 costo: this.n(row.costo ?? 0),
                 descuento: this.n(row.descuento ?? 0),
-                impuesto: String(row.impuesto ?? '0'),
+                impuesto: String(this.normalizeTaxRate(row.impuesto ?? '0')),
             }
         },
         rowImportKey(r){ return r.pedido_codigo && r.pedido_detalle_id ? `p:${r.pedido_codigo}:${r.pedido_detalle_id}` : null; },
@@ -143,16 +168,48 @@ window.ordenCompraProductosTable = window.ordenCompraProductosTable || function 
             this.sync();
         },
         async loadBodegas(){ if(this.bodegas.length || !this.livewire) return; try{ this.bodegas = await this.livewire.call('fetchBodegas'); }catch(_){ this.bodegas=[]; } },
-        async searchProductos(row){ if(!this.livewire || !row.id_bodega) return; const list = await this.livewire.call('searchProductosPorBodega', row.id_bodega, row.producto_filtro || ''); this.productosPorFila[row._key]=list||[]; },
-        async onBodegaChange(row){ row.codigo_producto=''; row.producto=''; row.unidad='UN'; row.producto_filtro=''; await this.searchProductos(row); this.sync(); },
-        onProductoChange(row){
-            const p=(this.productosPorFila[row._key]||[]).find(x=>x.codigo===row.codigo_producto);
-            if(!p){ this.sync(); return; }
-            row.producto=p.nombre;
-            row.costo=this.n(p.costo);
-            row.impuesto=String(Math.round(this.n(p.impuesto)));
-            row.unidad=p.unidad || row.unidad || 'UN';
+        async searchProductos(row){ if(!this.livewire || !row.id_bodega) return; const list = await this.livewire.call('searchProductosPorBodega', row.id_bodega, row.producto_filtro || ''); this.productosPorFila[row._key]=list||[]; if((list||[]).length===0){this.highlightedProductoIndex[row._key]=-1;return;} this.highlightedProductoIndex[row._key]=0; },
+        async onBodegaChange(row){ row.codigo_producto=''; row.producto=''; row.unidad='UN'; row.producto_filtro=''; this.closeProductoDropdown(row); await this.searchProductos(row); this.sync(); },
+        async onProductoInput(row){
+            row.codigo_producto='';
+            row.producto='';
+            this.openProductoDropdown(row);
+            await this.searchProductos(row);
             this.sync();
+        },
+        openProductoDropdown(row){ this.productoDropdownOpen[row._key]=true; },
+        closeProductoDropdown(row){ this.productoDropdownOpen[row._key]=false; },
+        isProductoDropdownOpen(row){ return !!this.productoDropdownOpen[row._key] && !!row.id_bodega; },
+        moveProductoHighlight(row, step){
+            const options=this.productosPorFila[row._key]||[];
+            if(options.length===0){ return; }
+            this.openProductoDropdown(row);
+            const current=this.highlightedProductoIndex[row._key] ?? 0;
+            const next=(current+step+options.length)%options.length;
+            this.highlightedProductoIndex[row._key]=next;
+        },
+        selectHighlightedProducto(row){
+            const options=this.productosPorFila[row._key]||[];
+            if(options.length===0){ return; }
+            const idx=this.highlightedProductoIndex[row._key] ?? 0;
+            const selected=options[idx] || options[0];
+            if(selected){ this.selectProducto(row, selected); }
+        },
+        selectProducto(row, p){
+            row.codigo_producto=p.codigo;
+            row.producto=p.nombre;
+            row.producto_filtro=p.label;
+            row.costo=this.n(p.costo);
+            row.impuesto=String(this.normalizeTaxRate(p.impuesto));
+            row.unidad=p.unidad || row.unidad || 'UN';
+            this.closeProductoDropdown(row);
+            this.sync();
+        },
+        normalizeTaxRate(rate){
+            const numeric=this.n(rate);
+            const known=[0,5,8,15,18];
+            const snap=known.find((value)=>Math.abs(value-numeric)<=0.05);
+            return snap ?? Number(numeric.toFixed(2));
         },
         descripcionItem(row){ if(row.es_auxiliar) return row.producto_auxiliar || row.producto || ''; return row.producto || ''; },
         addRow(){ this.rows.push(this.normalizeRow({})); this.sync(); },
@@ -163,7 +220,7 @@ window.ordenCompraProductosTable = window.ordenCompraProductosTable || function 
             const basePorIva={},ivaPorIva={};
             let subtotal=0,descuento=0,impuesto=0;
             for(const r of this.rows){
-                const rate=this.n(r.impuesto); const k=String(rate);
+                const rate=this.normalizeTaxRate(r.impuesto); const k=String(rate);
                 const base=this.lineSubtotal(r); const desc=this.n(r.descuento); const net=Math.max(0,base-desc); const iva=net*(rate/100);
                 subtotal+=base; descuento+=desc; impuesto+=iva;
                 basePorIva[k]=(basePorIva[k]||0)+base; ivaPorIva[k]=(ivaPorIva[k]||0)+iva;
@@ -173,7 +230,7 @@ window.ordenCompraProductosTable = window.ordenCompraProductosTable || function 
             const tarifas=[...preferred.filter(x=>present.includes(x)),...present.filter(x=>!preferred.includes(x)).sort((a,b)=>a-b)];
             this.summary={subtotal,descuento,impuesto,total:subtotal-descuento+impuesto,basePorIva,ivaPorIva,tarifas};
 
-            const payload=this.rows.map(({_key,producto_filtro,...r})=>{ const base=Math.max(0,this.lineSubtotal(r)-this.n(r.descuento)); return {...r,id_bodega:this.n(r.id_bodega),bodega:r.bodega||String(r.id_bodega||''),valor_impuesto:(base*(this.n(r.impuesto)/100)).toFixed(6)}; });
+            const payload=this.rows.map(({_key,producto_filtro,...r})=>{ const base=Math.max(0,this.lineSubtotal(r)-this.n(r.descuento)); const impuestoNormalizado=this.normalizeTaxRate(r.impuesto); return {...r,id_bodega:this.n(r.id_bodega),bodega:r.bodega||String(r.id_bodega||''),impuesto:String(impuestoNormalizado),valor_impuesto:(base*(impuestoNormalizado/100)).toFixed(6)}; });
             if(!this.livewire) return;
             this.livewire.set('data.detalles',payload,false);
             this.livewire.set('data.subtotal',subtotal.toFixed(2),false);
