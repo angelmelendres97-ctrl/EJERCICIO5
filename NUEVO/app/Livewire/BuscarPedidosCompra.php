@@ -277,6 +277,7 @@ class BuscarPedidosCompra extends Component implements HasForms, HasTable
         return $table
             ->query(fn() => $this->getTableQuery())
             ->defaultSort('pedi_fec_pedi', 'desc')
+            ->persistSelectionInSession()
             ->columns([
                 Tables\Columns\TextColumn::make('pedi_cod_pedi')
                     ->label('Secuencial')
@@ -314,6 +315,39 @@ class BuscarPedidosCompra extends Component implements HasForms, HasTable
                 Tables\Columns\TextColumn::make('pedi_fec_pedi')->label('Fecha Pedido')->date()->sortable(),
             ])
             ->actions([
+                Tables\Actions\Action::make('importar_individual')
+                    ->label('Agregar')
+                    ->icon('heroicon-o-plus')
+                    ->color('primary')
+                    ->action(function (Model $record) {
+                        $pedido = (int) ltrim((string) $record->pedi_cod_pedi, '0');
+
+                        if ($pedido <= 0) {
+                            return;
+                        }
+
+                        $this->dispatch(
+                            'pedidos_seleccionados',
+                            [$pedido],
+                            $this->id_empresa,
+                            $record->pedi_det_pedi
+                        );
+
+                        $pedidosActuales = $this->parsePedidosImportados($this->pedidos_importados);
+                        $pedidosUnicos = array_values(array_unique(array_merge($pedidosActuales, [$pedido])));
+
+                        $this->pedidos_importados = implode(', ', array_map(
+                            fn($codigoPedido) => str_pad($codigoPedido, 8, "0", STR_PAD_LEFT),
+                            $pedidosUnicos
+                        ));
+
+                        $this->resetTable();
+
+                        Notification::make()
+                            ->title('Pedido agregado a la importación')
+                            ->success()
+                            ->send();
+                    }),
                 Tables\Actions\Action::make('view_details')
                     ->label('Ver Detalle')
                     ->icon('heroicon-o-eye')
