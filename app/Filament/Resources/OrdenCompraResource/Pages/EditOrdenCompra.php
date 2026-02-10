@@ -38,6 +38,29 @@ class EditOrdenCompra extends EditRecord
     {
         $data['info_proveedor'] = $data['id_proveedor'] ?? null;
 
+        if (empty($data['detalles']) && $this->record) {
+            $data['detalles'] = $this->record->detalles
+                ->map(function ($detalle) {
+                    return [
+                        'pedido_codigo' => $detalle->pedido_codigo,
+                        'pedido_detalle_id' => $detalle->pedido_detalle_id,
+                        'id_bodega' => $detalle->id_bodega,
+                        'bodega' => $detalle->bodega,
+                        'codigo_producto' => $detalle->codigo_producto,
+                        'producto' => $detalle->producto,
+                        'cantidad' => (float) $detalle->cantidad,
+                        'costo' => (float) $detalle->costo,
+                        'descuento' => (float) $detalle->descuento,
+                        'impuesto' => (float) $detalle->impuesto,
+                        'valor_impuesto' => (float) $detalle->valor_impuesto,
+                        'detalle' => $detalle->detalle,
+                        'unidad' => $detalle->unidad,
+                    ];
+                })
+                ->values()
+                ->all();
+        }
+
         $detallePorPedido = $this->resolveDetallePedidoData($data);
 
         if (isset($data['detalles']) && is_array($data['detalles'])) {
@@ -266,6 +289,7 @@ class EditOrdenCompra extends EditRecord
             $this->recalculateTotals();
             $this->applySolicitadoPor($connectionName, $pedidosUnicos);
             $this->form->fill($this->data);
+            $this->dispatch('oc-detalles-sync', detalles: $this->data['detalles']);
             $this->dispatch('close-modal', id: 'importar_pedido');
             return;
         }
@@ -298,6 +322,7 @@ class EditOrdenCompra extends EditRecord
             $this->recalculateTotals();
             $this->applySolicitadoPor($connectionName, $pedidosUnicos);
             $this->form->fill($this->data);
+            $this->dispatch('oc-detalles-sync', detalles: $this->data['detalles']);
             $this->dispatch('close-modal', id: 'importar_pedido');
             return;
         }
@@ -379,6 +404,7 @@ class EditOrdenCompra extends EditRecord
 
             return [
                 'id_bodega' => $id_bodega_item,
+                'bodega' => (string) $id_bodega_item,
                 'codigo_producto' => $codigoProducto,
                 'producto' => $productoLinea,
                 'unidad' => $unidadItem,
@@ -415,6 +441,7 @@ class EditOrdenCompra extends EditRecord
 
         $this->applySolicitadoPor($connectionName, $pedidosUnicos);
         $this->form->fill($this->data);
+        $this->dispatch('oc-detalles-sync', detalles: $this->data['detalles']);
 
         $this->dispatch('close-modal', id: 'importar_pedido');
     }
@@ -629,6 +656,144 @@ class EditOrdenCompra extends EditRecord
         }
     }
 
+    private function syncDetalleRows(array $detalles): void
+    {
+        if (!$this->record) {
+            return;
+        }
+
+        $this->record->detalles()->delete();
+
+        $payload = collect($detalles)
+            ->map(function (array $detalle) {
+                return [
+                    'id_orden_compra' => $this->record->id,
+                    'pedido_codigo' => $detalle['pedido_codigo'] ?? null,
+                    'pedido_detalle_id' => $detalle['pedido_detalle_id'] ?? null,
+                    'id_bodega' => (int) ($detalle['id_bodega'] ?? 0),
+                    'bodega' => (string) ($detalle['bodega'] ?? $detalle['id_bodega'] ?? ''),
+                    'codigo_producto' => (string) ($detalle['codigo_producto'] ?? ''),
+                    'producto' => (string) ($detalle['producto'] ?? ''),
+                    'cantidad' => (float) ($detalle['cantidad'] ?? 0),
+                    'costo' => (float) ($detalle['costo'] ?? 0),
+                    'descuento' => (float) ($detalle['descuento'] ?? 0),
+                    'impuesto' => (float) ($detalle['impuesto'] ?? 0),
+                    'valor_impuesto' => (float) ($detalle['valor_impuesto'] ?? 0),
+                    'total' => (float) (($detalle['cantidad'] ?? 0) * ($detalle['costo'] ?? 0) - ($detalle['descuento'] ?? 0) + ($detalle['valor_impuesto'] ?? 0)),
+                    'detalle' => $detalle['detalle'] ?? null,
+                    'unidad' => (string) ($detalle['unidad'] ?? 'UN'),
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ];
+            })
+            ->filter(fn(array $row) => !empty($row['producto']) && !empty($row['codigo_producto']) && !empty($row['id_bodega']))
+            ->values()
+            ->all();
+
+        if (!empty($payload)) {
+            $this->record->detalles()->insert($payload);
+        }
+    }
+
+    public function fetchBodegas(): array
+    {
+        $empresaId = $this->data['id_empresa'] ?? null;
+        $amdgEmpresa = $this->data['amdg_id_empresa'] ?? null;
+        $amdgSucursal = $this->data['amdg_id_sucursal'] ?? null;
+
+        if (!$empresaId || !$amdgEmpresa || !$amdgSucursal) {
+            return [];
+        }
+
+        $connectionName = OrdenCompraResource::getExternalConnectionName((int) $empresaId);
+        if (!$connectionName) {
+            return [];
+        }
+
+        try {
+            $schema = DB::connection($connectionName)->getSchemaBuilder();
+            if (!$schema->hasTable('saebode')) {
+                return [];
+            }
+
+            $query = DB::connection($connectionName)->table('saebode');
+            if ($schema->hasColumn('saebode', 'bode_cod_empr')) {
+                $query->where('bode_cod_empr', $amdgEmpresa);
+            }
+            if ($schema->hasColumn('saebode', 'bode_cod_sucu')) {
+                $query->where('bode_cod_sucu', $amdgSucursal);
+            }
+
+            return $query
+                ->select(['bode_cod_bode', 'bode_nom_bode'])
+                ->orderBy('bode_nom_bode')
+                ->limit(500)
+                ->get()
+                ->map(fn($b) => [
+                    'id' => (string) $b->bode_cod_bode,
+                    'nombre' => trim(((string) $b->bode_nom_bode) . ' (' . ((string) $b->bode_cod_bode) . ')'),
+                ])
+                ->all();
+        } catch (\Throwable $e) {
+            return [];
+        }
+    }
+
+    public function searchProductosPorBodega(string $bodegaId, string $term = ''): array
+    {
+        $empresaId = $this->data['id_empresa'] ?? null;
+        $amdgEmpresa = $this->data['amdg_id_empresa'] ?? null;
+        $amdgSucursal = $this->data['amdg_id_sucursal'] ?? null;
+
+        if (!$empresaId || !$amdgEmpresa || !$amdgSucursal || $bodegaId === '') {
+            return [];
+        }
+
+        $connectionName = OrdenCompraResource::getExternalConnectionName((int) $empresaId);
+        if (!$connectionName) {
+            return [];
+        }
+
+        try {
+            return DB::connection($connectionName)
+                ->table('saeprod')
+                ->join('saeprbo', function ($join) {
+                    $join->on('prod_cod_prod', '=', 'prbo_cod_prod')
+                        ->on('prod_cod_empr', '=', 'prbo_cod_empr')
+                        ->on('prod_cod_sucu', '=', 'prbo_cod_sucu');
+                })
+                ->where('prod_cod_empr', $amdgEmpresa)
+                ->where('prod_cod_sucu', $amdgSucursal)
+                ->where('prbo_cod_bode', $bodegaId)
+                ->when($term !== '', function ($q) use ($term) {
+                    $q->where(function ($sub) use ($term) {
+                        $sub->where('prod_nom_prod', 'like', "%{$term}%")
+                            ->orWhere('prod_cod_prod', 'like', "%{$term}%");
+                    });
+                })
+                ->orderBy('prod_nom_prod')
+                ->limit(50)
+                ->get([
+                    'prod_cod_prod',
+                    'prod_nom_prod',
+                    'prbo_uco_prod',
+                    'prbo_iva_porc',
+                    'prbo_cod_unid',
+                ])
+                ->map(fn($r) => [
+                    'codigo' => (string) $r->prod_cod_prod,
+                    'nombre' => (string) $r->prod_nom_prod,
+                    'label' => trim(((string) $r->prod_nom_prod) . ' (' . ((string) $r->prod_cod_prod) . ')'),
+                    'costo' => (float) ($r->prbo_uco_prod ?? 0),
+                    'impuesto' => (float) ($r->prbo_iva_porc ?? 0),
+                    'unidad' => (string) ($r->prbo_cod_unid ?? 'UN'),
+                ])
+                ->all();
+        } catch (\Throwable $e) {
+            return [];
+        }
+    }
+
     protected function mutateFormDataBeforeSave(array $data): array
     {
         $newDetalles = [];
@@ -661,6 +826,8 @@ class EditOrdenCompra extends EditRecord
 
     protected function afterSave(): void
     {
+        $this->syncDetalleRows($this->data['detalles'] ?? []);
+
         $pedidosActuales = OrdenCompraResource::normalizePedidosImportados($this->record->pedidos_importados);
         $agregados = array_values(array_diff($pedidosActuales, $this->pedidosOriginales));
         $eliminados = array_values(array_diff($this->pedidosOriginales, $pedidosActuales));
