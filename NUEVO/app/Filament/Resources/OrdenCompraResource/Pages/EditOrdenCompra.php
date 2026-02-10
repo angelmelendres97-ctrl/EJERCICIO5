@@ -41,10 +41,25 @@ class EditOrdenCompra extends EditRecord
         if (empty($data['detalles']) && $this->record) {
             $data['detalles'] = $this->record->detalles
                 ->map(function ($detalle) {
+                    $bodegaRaw = $detalle->id_bodega ?? $detalle->bodega;
+                    $bodegaNormalizada = null;
+
+                    if ($bodegaRaw !== null && $bodegaRaw !== '') {
+                        $bodegaRaw = trim((string) $bodegaRaw);
+
+                        if (preg_match('/\((\d+)\)\s*$/', $bodegaRaw, $matches)) {
+                            $bodegaNormalizada = (int) $matches[1];
+                        } elseif (is_numeric($bodegaRaw)) {
+                            $bodegaNormalizada = (int) $bodegaRaw;
+                        } elseif (preg_match('/(\d+)$/', $bodegaRaw, $matches)) {
+                            $bodegaNormalizada = (int) $matches[1];
+                        }
+                    }
+
                     return [
                         'pedido_codigo' => $detalle->pedido_codigo,
                         'pedido_detalle_id' => $detalle->pedido_detalle_id,
-                        'id_bodega' => $detalle->id_bodega,
+                        'id_bodega' => $bodegaNormalizada,
                         'bodega' => $detalle->bodega,
                         'codigo_producto' => $detalle->codigo_producto,
                         'producto' => $detalle->producto,
