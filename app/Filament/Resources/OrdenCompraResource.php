@@ -709,6 +709,7 @@ class OrdenCompraResource extends Resource
                             ->schema([
                                 Grid::make(14)
                                     ->extraAttributes([
+                                        'data-oc-item' => '1',
                                         'x-data' => '{
                                             subtotal: 0,
                                             total: 0,
@@ -730,8 +731,11 @@ class OrdenCompraResource extends Resource
                                                 const impuesto = this.parse(this.$refs.impuesto?.value);
 
                                                 this.subtotal = cantidad * costo;
-                                                const iva = this.subtotal * (impuesto / 100);
-                                                this.total = (this.subtotal + iva) - descuento;
+                                                const baseNeta = Math.max(0, this.subtotal - descuento);
+                                                const iva = baseNeta * (impuesto / 100);
+                                                this.total = baseNeta + iva;
+
+                                                window.dispatchEvent(new CustomEvent("oc-recalculate-summary"));
                                             },
                                         }',
                                         'x-init' => 'recalculate()',
@@ -1013,6 +1017,7 @@ class OrdenCompraResource extends Resource
                                             ->default('1.000000')
                                             ->extraInputAttributes([
                                                 'x-ref' => 'cantidad',
+                                                'data-oc-field' => 'cantidad',
                                                 'inputmode' => 'decimal',
                                             ])
                                             ->rule('regex:/^\d+(\.\d{0,6})?$/')
@@ -1030,6 +1035,7 @@ class OrdenCompraResource extends Resource
                                             ->live(onBlur: true)
                                             ->extraInputAttributes([
                                                 'x-ref' => 'costo',
+                                                'data-oc-field' => 'costo',
                                                 'inputmode' => 'decimal',
                                             ])
                                             ->rule('regex:/^\d+(\.\d{0,6})?$/')
@@ -1047,6 +1053,7 @@ class OrdenCompraResource extends Resource
                                             ->live(onBlur: true)
                                             ->extraInputAttributes([
                                                 'x-ref' => 'descuento',
+                                                'data-oc-field' => 'descuento',
                                                 'inputmode' => 'decimal',
                                             ])
                                             ->rule('regex:/^\d+(\.\d{0,6})?$/')
@@ -1068,6 +1075,7 @@ class OrdenCompraResource extends Resource
                                             ->afterStateUpdated(fn(Get $get, Set $set) => self::syncTotales($get, $set))
                                             ->extraInputAttributes([
                                                 'x-ref' => 'impuesto',
+                                                'data-oc-field' => 'impuesto',
                                             ])
                                             ->columnSpan(['default' => 12, 'lg' => 1]),
 
