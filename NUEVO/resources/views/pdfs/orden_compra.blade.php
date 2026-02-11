@@ -255,6 +255,14 @@
             margin-top: 30px;
             margin-bottom: 30px;
         }
+
+        .detalle-table td:nth-child(3),
+        .detalle-table th:nth-child(3) {
+            white-space: normal;
+            word-break: break-word;
+            overflow-wrap: anywhere;
+            line-height: 1.2;
+        }
     </style>
 </head>
 

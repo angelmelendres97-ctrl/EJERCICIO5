@@ -361,6 +361,7 @@ class BuscarPedidosCompra extends Component implements HasForms, HasTable
         return $table
             ->query(fn() => $this->getTableQuery())
             ->defaultSort('pedi_fec_pedi', 'desc')
+            ->actionsPosition(Tables\Enums\ActionsPosition::BeforeColumns)
             ->columns([
                 Tables\Columns\TextColumn::make('pedi_cod_pedi')
                     ->label('Secuencial')
@@ -411,8 +412,26 @@ class BuscarPedidosCompra extends Component implements HasForms, HasTable
                     ->action(fn() => $this->limpiarSeleccionAcumulada()),
             ])
             ->actions([
+
+                Tables\Actions\Action::make('acumular_pedido')
+                    ->label(function (Model $record) {
+                        $pedido = (int) ltrim((string) $record->pedi_cod_pedi, '0');
+
+                        return in_array($pedido, $this->pedidos_seleccionados_acumulados, true)
+                            ? 'Quitar selección'
+                            : 'Selecciónar';
+                    })
+                    ->icon('heroicon-o-plus-circle')
+                    ->color(function (Model $record) {
+                        $pedido = (int) ltrim((string) $record->pedi_cod_pedi, '0');
+
+                        return in_array($pedido, $this->pedidos_seleccionados_acumulados, true) ? 'warning' : 'gray';
+                    })
+                    ->action(function (Model $record) {
+                        $this->toggleSeleccionAcumulada($record->pedi_cod_pedi);
+                    }),
                 Tables\Actions\Action::make('view_details')
-                    ->label('Ver Detalle')
+                    ->label('Ver')
                     ->icon('heroicon-o-eye')
                     ->modalContent(function (Model $record) {
                         $connectionName = OrdenCompraResource::getExternalConnectionName($this->id_empresa);
@@ -453,30 +472,8 @@ class BuscarPedidosCompra extends Component implements HasForms, HasTable
                     ->modalHeading('Detalles del Pedido')
                     ->modalSubmitAction(false)
                     ->modalCancelAction(fn(StaticAction $action) => $action->label('Cerrar')),
-                Tables\Actions\Action::make('acumular_pedido')
-                    ->label(function (Model $record) {
-                        $pedido = (int) ltrim((string) $record->pedi_cod_pedi, '0');
 
-                        return in_array($pedido, $this->pedidos_seleccionados_acumulados, true)
-                            ? 'Quitar selección'
-                            : 'Agregar selección';
-                    })
-                    ->icon('heroicon-o-plus-circle')
-                    ->color(function (Model $record) {
-                        $pedido = (int) ltrim((string) $record->pedi_cod_pedi, '0');
 
-                        return in_array($pedido, $this->pedidos_seleccionados_acumulados, true) ? 'warning' : 'gray';
-                    })
-                    ->action(function (Model $record) {
-                        $this->toggleSeleccionAcumulada($record->pedi_cod_pedi);
-                    }),
-                Tables\Actions\Action::make('importar_individual')
-                    ->label('Importar')
-                    ->icon('heroicon-o-arrow-down-tray')
-                    ->color('success')
-                    ->action(function (Model $record) {
-                        $this->importarPedidosSeleccionados(collect([$record]));
-                    }),
             ]);
     }
 
