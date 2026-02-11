@@ -84,6 +84,7 @@ class OrdenCompraResource extends Resource
         $basePorIva = [];
         $descPorIva = [];
         $ivaPorIva = [];
+        $totalPorIva = [];
 
         foreach ($detalles as $detalle) {
             $rate = (float) ($detalle['impuesto'] ?? 0);
@@ -100,6 +101,7 @@ class OrdenCompraResource extends Resource
 
             $baseNeta = max(0, $base - $descuento);
             $ivaPorIva[$rateKey] = ($ivaPorIva[$rateKey] ?? 0) + ($baseNeta * ($rate / 100));
+            $totalPorIva[$rateKey] = ($totalPorIva[$rateKey] ?? 0) + ($baseNeta + ($baseNeta * ($rate / 100)));
         }
 
         $tarifas = collect($basePorIva)
@@ -114,13 +116,19 @@ class OrdenCompraResource extends Resource
             ->merge($tarifas->diff($ordenPreferido)->sort())
             ->values();
 
-        $subtotalGeneral = array_sum($basePorIva);
+        $baseNetaPorIva = [];
+        foreach ($basePorIva as $rateKey => $baseBruta) {
+            $baseNetaPorIva[$rateKey] = max(0, (float) $baseBruta - (float) ($descPorIva[$rateKey] ?? 0));
+        }
+
+        $subtotalGeneral = array_sum($totalPorIva);
         $descuentoGeneral = array_sum($descPorIva);
         $ivaGeneral = array_sum($ivaPorIva);
-        $totalGeneral = $subtotalGeneral - $descuentoGeneral + $ivaGeneral;
+        $totalGeneral = $subtotalGeneral;
 
         return [
             'basePorIva' => $basePorIva,
+            'baseNetaPorIva' => $baseNetaPorIva,
             'ivaPorIva' => $ivaPorIva,
             'tarifas' => $tarifas,
             'subtotalGeneral' => $subtotalGeneral,
