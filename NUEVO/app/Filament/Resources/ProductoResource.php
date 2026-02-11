@@ -77,7 +77,8 @@ class ProductoResource extends Resource
     public static function getFormSchema(
         bool $useRelationships = true,
         bool $lockConnectionFields = false,
-        bool $useModalFields = false
+        bool $useModalFields = false,
+        bool $autoSelectExistingWarehouses = true,
     ): array {
         $empresaSelect = Forms\Components\Select::make('id_empresa')
             ->label('Conexion')
@@ -180,8 +181,8 @@ class ProductoResource extends Resource
             ->default([])
             ->options($bodegasOptions);
 
-        $bodegasField->afterStateHydrated(function (Get $get, Set $set, $state) {
-            if (!empty($state)) {
+        $bodegasField->afterStateHydrated(function (Get $get, Set $set, $state) use ($autoSelectExistingWarehouses) {
+            if (!$autoSelectExistingWarehouses || !empty($state)) {
                 return;
             }
 
