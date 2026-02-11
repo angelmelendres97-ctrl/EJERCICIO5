@@ -11,8 +11,18 @@
                     <th class="p-2 w-12"></th>
                     <th class="p-2 w-40">Bodega</th>
                     <th class="p-2 w-28">Producto</th>
-                    <th class="p-2 w-28">Código</th>
-                    <th class="p-2 min-w-[28rem]">Descripción</th>
+                    <th class="p-2 w-28 cursor-pointer select-none" @click="toggleSort('codigo')">
+                        <div class="inline-flex items-center gap-1">
+                            <span>Código</span>
+                            <span class="text-[10px]" x-text="sortIndicator('codigo')"></span>
+                        </div>
+                    </th>
+                    <th class="p-2 min-w-[28rem] cursor-pointer select-none" @click="toggleSort('descripcion')">
+                        <div class="inline-flex items-center gap-1">
+                            <span>Descripción</span>
+                            <span class="text-[10px]" x-text="sortIndicator('descripcion')"></span>
+                        </div>
+                    </th>
                     <th class="p-2">Unidad</th>
                     <th class="p-2">Cant.</th>
                     <th class="p-2">Costo</th>
@@ -30,11 +40,11 @@
                     </tr>
                 </template>
 
-                <template x-for="(row, idx) in rows" :key="row._key">
+                <template x-for="row in displayedRows" :key="row._key">
                     <tr class="border-t border-gray-200 dark:border-gray-700 align-top">
                         <td class="p-1 text-center">
                             <button type="button" class="text-danger-600"
-                                @click.stop.prevent="removeRow(idx)">✕</button>
+                                @click.stop.prevent="removeRowByKey(row._key)">✕</button>
                         </td>
 
                         <td class="p-1">
@@ -187,6 +197,10 @@
     window.ordenCompraProductosTable = window.ordenCompraProductosTable || function(initialRows) {
         return {
             rows: [],
+            sort: {
+                field: null,
+                direction: 'asc',
+            },
             bodegas: [],
             productosPorFila: {},
             latestSearchToken: {},
@@ -224,6 +238,63 @@
                         id_bodega: r.id_bodega
                     })));
                 });
+
+                setTimeout(() => this.ensureBodegasLoaded(), 300);
+            },
+
+            get displayedRows() {
+                if (!this.sort.field) {
+                    return this.rows;
+                }
+
+                const factor = this.sort.direction === 'asc' ? 1 : -1;
+                return [...this.rows].sort((a, b) => {
+                    const left = this.sortValue(a, this.sort.field);
+                    const right = this.sortValue(b, this.sort.field);
+
+                    if (left < right) return -1 * factor;
+                    if (left > right) return 1 * factor;
+                    return 0;
+                });
+            },
+            toggleSort(field) {
+                if (this.sort.field !== field) {
+                    this.sort = {
+                        field,
+                        direction: 'asc',
+                    };
+                    return;
+                }
+
+                if (this.sort.direction === 'asc') {
+                    this.sort.direction = 'desc';
+                    return;
+                }
+
+                this.sort = {
+                    field: null,
+                    direction: 'asc',
+                };
+            },
+            sortIndicator(field) {
+                if (this.sort.field !== field) {
+                    return '';
+                }
+
+                return this.sort.direction === 'asc' ? '▲' : '▼';
+            },
+            sortValue(row, field) {
+                if (field === 'codigo') {
+                    return String(row.codigo_producto ?? '').toLocaleLowerCase();
+                }
+
+                if (field === 'descripcion') {
+                    const descripcion = (row.detalle_pedido && String(row.detalle_pedido).trim() !== '') ? row
+                        .detalle_pedido : this.descripcionItem(row);
+                    return String(descripcion ?? '').toLocaleLowerCase();
+                }
+
+                return '';
             },
 
             getCurrentContext() {
@@ -331,6 +402,7 @@
                     }
                 }
                 this.rows.forEach(r => this.fillProductoFiltro(r));
+                this.ensureBodegasLoaded();
                 this.sync();
             },
             async loadBodegas(force = false) {
@@ -464,8 +536,10 @@
                 this.rows.push(this.normalizeRow({}));
                 this.sync();
             },
-            removeRow(i) {
-                this.rows.splice(i, 1);
+            removeRowByKey(key) {
+                const index = this.rows.findIndex(r => r._key === key);
+                if (index === -1) return;
+                this.rows.splice(index, 1);
                 this.sync();
             },
             lineSubtotal(r) {

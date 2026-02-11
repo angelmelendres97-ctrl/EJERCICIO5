@@ -414,10 +414,12 @@ class CreateOrdenCompra extends CreateRecord
                 ->where('prod_cod_empr', $amdgEmpresa)
                 ->where('prod_cod_sucu', $amdgSucursal)
                 ->where('prbo_cod_bode', $bodegaId)
-                ->when($term !== '', function ($q) use ($term) {
+                ->when(trim($term) !== '', function ($q) use ($term) {
+                    $term = trim($term);
+
                     $q->where(function ($sub) use ($term) {
-                        $sub->where('prod_nom_prod', 'like', "%{$term}%")
-                            ->orWhere('prod_cod_prod', 'like', "%{$term}%");
+                        $sub->where('prod_nom_prod', 'ILIKE', "%{$term}%")
+                            ->orWhere('prod_cod_prod', 'ILIKE', "%{$term}%");
                     });
                 })
                 ->orderBy('prod_nom_prod')
