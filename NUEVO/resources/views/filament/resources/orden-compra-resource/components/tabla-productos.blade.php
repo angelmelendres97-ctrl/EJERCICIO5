@@ -562,13 +562,13 @@
 
             addRow() {
                 this.rows.push(this.normalizeRow({}));
-                this.sync();
+                this.sync(true);
             },
             removeRowByKey(key) {
                 const index = this.rows.findIndex(r => r._key === key);
                 if (index === -1) return;
                 this.rows.splice(index, 1);
-                this.sync();
+                this.sync(true);
             },
             lineSubtotal(r) {
                 return this.n(r.cantidad) * this.n(r.costo);
@@ -577,7 +577,17 @@
                 const base = Math.max(0, this.lineSubtotal(r) - this.n(r.descuento));
                 return base + (base * (this.n(r.impuesto) / 100));
             },
-            sync() {
+            persistState(payload, descuento, impuesto) {
+                if (!this.livewire) return;
+
+                this.livewire.set('data.detalles', payload, false);
+                this.livewire.set('data.subtotal', this.summary.subtotal.toFixed(2), false);
+                this.livewire.set('data.total_descuento', descuento.toFixed(2), false);
+                this.livewire.set('data.total_impuesto', impuesto.toFixed(2), false);
+                this.livewire.set('data.total', this.summary.total.toFixed(2), false);
+                this.livewire.set('data.resumen_totales', this.summary, false);
+            },
+            sync(immediate = false) {
                 const basePorIva = {},
                     baseNetaPorIva = {},
                     ivaPorIva = {};
@@ -627,15 +637,16 @@
                         valor_impuesto: (base * (this.n(r.impuesto) / 100)).toFixed(6)
                     };
                 });
-                if (!this.livewire) return;
+
                 clearTimeout(this.syncTimer);
+
+                if (immediate) {
+                    this.persistState(payload, descuento, impuesto);
+                    return;
+                }
+
                 this.syncTimer = setTimeout(() => {
-                    this.livewire.set('data.detalles', payload, false);
-                    this.livewire.set('data.subtotal', this.summary.subtotal.toFixed(2), false);
-                    this.livewire.set('data.total_descuento', descuento.toFixed(2), false);
-                    this.livewire.set('data.total_impuesto', impuesto.toFixed(2), false);
-                    this.livewire.set('data.total', this.summary.total.toFixed(2), false);
-                    this.livewire.set('data.resumen_totales', this.summary, false);
+                    this.persistState(payload, descuento, impuesto);
                 }, 40);
             }
         }
