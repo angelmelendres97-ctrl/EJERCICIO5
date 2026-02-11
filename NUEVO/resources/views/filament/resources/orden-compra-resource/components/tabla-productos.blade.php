@@ -9,7 +9,7 @@
             <thead class="bg-gray-100 dark:bg-gray-800">
                 <tr>
                     <th class="p-2 w-12"></th>
-                    <th class="p-2 min-w-72">Bodega</th>
+                    <th class="p-2 w-40">Bodega</th>
                     <th class="p-2 w-28">Producto</th>
                     <th class="p-2 w-28">Código</th>
                     <th class="p-2 min-w-[28rem]">Descripción</th>
@@ -17,8 +17,9 @@
                     <th class="p-2">Cant.</th>
                     <th class="p-2">Costo</th>
                     <th class="p-2">Desc.</th>
-                    <th class="p-2">IVA %</th>
                     <th class="p-2 text-right">Subtotal</th>
+                    <th class="p-2">IVA %</th>
+
                     <th class="p-2 text-right">Total</th>
                 </tr>
             </thead>
@@ -37,7 +38,7 @@
                         </td>
 
                         <td class="p-1">
-                            <select class="fi-select w-28" :key="`bodega-${row._key}-${bodegas.length}`"
+                            <select class="fi-select w-40" :key="`bodega-${row._key}-${bodegas.length}`"
                                 :value="String(row.id_bodega ?? '')" @focus="ensureBodegasLoaded()"
                                 @click="ensureBodegasLoaded()"
                                 @change="
@@ -63,7 +64,8 @@
                         <td class="p-1"><input class="fi-input w-28" x-model="row.codigo_producto" readonly></td>
                         <td class="p-1">
                             <input class="fi-input w-64"
-                                :value="(row.detalle_pedido && String(row.detalle_pedido).trim() !== '') ? row.detalle_pedido:
+                                :value="(row.detalle_pedido && String(row.detalle_pedido).trim() !== '') ? row
+                                    .detalle_pedido:
                                     descripcionItem(row)"
                                 readonly>
                         </td>
@@ -75,6 +77,9 @@
                                 x-model="row.costo" @input="sync()"></td>
                         <td class="p-1"><input type="number" step="0.000001" class="fi-input w-20"
                                 x-model="row.descuento" @input="sync()"></td>
+
+
+                        <td class="p-1 text-right" x-text="money4(lineSubtotal(row))"></td>
                         <td class="p-1">
                             <select class="fi-select w-20" x-model="row.impuesto" @change="sync()">
                                 <option value="0">0%</option>
@@ -84,8 +89,6 @@
                                 <option value="18">18%</option>
                             </select>
                         </td>
-
-                        <td class="p-1 text-right" x-text="money4(lineSubtotal(row))"></td>
                         <td class="p-1 text-right font-semibold" x-text="money4(lineTotal(row))"></td>
                     </tr>
                 </template>
@@ -128,9 +131,21 @@
     </div>
 
     <div class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 p-4 overflow-y-auto"
-        x-show="productoModal.open" x-transition.opacity x-cloak>
+        x-show="productoModal.open" x-transition.opacity x-cloak
+        style="align-items:center; justify-content:center; padding:16px; overflow:auto;">
+
         <div class="w-full max-w-4xl rounded-xl bg-white shadow-xl dark:bg-gray-900 max-h-[70vh] flex flex-col my-auto"
-            @click.outside="closeProductoModal()">
+            @click.outside="closeProductoModal()"
+            style="
+        width:100%;
+        max-width:900px;
+        max-height:55vh;
+        display:flex;
+        flex-direction:column;
+        border-radius:14px;
+        overflow:hidden;
+    ">
+
             <div class="border-b p-4 dark:border-gray-700">
                 <h3 class="text-sm font-semibold">Seleccionar producto</h3>
                 <p class="text-xs text-gray-500">Bodega: <span

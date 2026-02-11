@@ -499,6 +499,7 @@ class EditOrdenCompra extends EditRecord
 
         $this->applySolicitadoPor($connectionName, $pedidosUnicos);
         $this->form->fill($this->data);
+        $this->dispatch('oc-detalles-sync', detalles: $this->data['detalles']);
 
         $this->dispatch('close-modal', id: 'importar_pedido');
     }
