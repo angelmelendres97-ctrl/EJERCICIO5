@@ -448,49 +448,15 @@
         @endphp
 
         @php
-            // ==============================
-            // RESUMEN POR TARIFA (BASE/DESC/IVA) - SOLO TARIFAS EXISTENTES
-            // ==============================
-            $basePorIva = [];
-            $descPorIva = [];
-            $ivaPorIva = [];
+            $resumenTotales = $resumenTotales ?? [];
+            $baseNetaPorIva = $resumenTotales['baseNetaPorIva'] ?? [];
+            $ivaPorIva = $resumenTotales['ivaPorIva'] ?? [];
+            $tarifas = $resumenTotales['tarifas'] ?? [];
 
-            foreach ($ordenCompra->detalles as $d) {
-                $rate = (float) ($d->impuesto ?? 0);
-
-                $cantidad = (float) ($d->cantidad ?? 0);
-                $costo = (float) ($d->costo ?? 0);
-                $descuento = (float) ($d->descuento ?? 0);
-
-                $base = $cantidad * $costo;
-
-                $basePorIva[$rate] = ($basePorIva[$rate] ?? 0) + $base;
-                $descPorIva[$rate] = ($descPorIva[$rate] ?? 0) + $descuento;
-
-                // IVA sobre base neta (base - descuento)
-                $baseNeta = max(0, $base - $descuento);
-                $ivaPorIva[$rate] = ($ivaPorIva[$rate] ?? 0) + $baseNeta * ($rate / 100);
-            }
-
-            // Tarifas existentes: SOLO las que tienen base > 0
-            $tarifas = collect($basePorIva)
-                ->filter(fn($base) => round((float) $base, 6) > 0)
-                ->keys()
-                ->map(fn($r) => (float) $r)
-                ->values();
-
-            // Orden personalizado (como tu formato): 15, 0, 5, 8, 18, ... (si existen)
-            $ordenPreferido = collect([15, 0, 5, 8, 18]);
-            $tarifas = $ordenPreferido
-                ->intersect($tarifas)
-                ->merge($tarifas->diff($ordenPreferido)->sort())
-                ->values();
-
-            // Totales generales
-            $subtotalGeneral = array_sum($basePorIva);
-            $descuentoGeneral = array_sum($descPorIva);
-            $ivaGeneral = array_sum($ivaPorIva);
-            $totalGeneral = $subtotalGeneral - $descuentoGeneral + $ivaGeneral;
+            $subtotalGeneral = (float) ($resumenTotales['subtotalGeneral'] ?? $ordenCompra->subtotal ?? 0);
+            $descuentoGeneral = (float) ($resumenTotales['descuentoGeneral'] ?? $ordenCompra->total_descuento ?? 0);
+            $ivaGeneral = (float) ($resumenTotales['ivaGeneral'] ?? $ordenCompra->total_impuesto ?? 0);
+            $totalGeneral = (float) ($resumenTotales['totalGeneral'] ?? $ordenCompra->total ?? 0);
 
             // Helpers
             $fmtRate = fn($r) => rtrim(rtrim(number_format((float) $r, 2, '.', ''), '0'), '.');
@@ -543,7 +509,12 @@
                         </tr>
 
                         {{-- TARIFA + IVA (intercalados, como factura real) --}}
-                        @foreach ($basePorIva as $rate => $base)
+                        @foreach ($tarifas as $rate)
+                            @php
+                                $rateKey = (string) $rate;
+                                $base = (float) ($baseNetaPorIva[$rateKey] ?? 0);
+                                $iva = (float) ($ivaPorIva[$rateKey] ?? 0);
+                            @endphp
                             @if (round($base, 6) > 0)
                                 <tr>
                                     <th class="left">TARIFA {{ $fmtRate($rate) }} %</th>
@@ -552,7 +523,7 @@
 
                                 <tr>
                                     <th class="left">IVA {{ $fmtRate($rate) }} %</th>
-                                    <td class="right">$ {{ number_format($ivaPorIva[$rate] ?? 0, 2) }}</td>
+                                    <td class="right">$ {{ number_format($iva, 2) }}</td>
                                 </tr>
                             @endif
                         @endforeach

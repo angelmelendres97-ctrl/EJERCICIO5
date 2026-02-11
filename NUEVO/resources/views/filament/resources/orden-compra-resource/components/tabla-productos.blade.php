@@ -589,25 +589,38 @@
             },
             sync(immediate = false) {
                 const basePorIva = {},
-                    baseNetaPorIva = {},
-                    ivaPorIva = {};
+                    descPorIva = {};
                 let subtotal = 0,
-                    descuento = 0,
-                    impuesto = 0;
+                    descuento = 0;
+
+                const roundMoney = (value) => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+
                 for (const r of this.rows) {
                     const rate = this.n(r.impuesto);
                     const k = String(rate);
                     const base = this.lineSubtotal(r);
                     const desc = this.n(r.descuento);
-                    const net = Math.max(0, base - desc);
-                    const iva = net * (rate / 100);
+
                     subtotal += base;
                     descuento += desc;
-                    impuesto += iva;
                     basePorIva[k] = (basePorIva[k] || 0) + base;
-                    baseNetaPorIva[k] = (baseNetaPorIva[k] || 0) + net;
-                    ivaPorIva[k] = (ivaPorIva[k] || 0) + iva;
+                    descPorIva[k] = (descPorIva[k] || 0) + desc;
                 }
+
+                const baseNetaPorIva = {};
+                const ivaPorIva = {};
+                for (const [k, base] of Object.entries(basePorIva)) {
+                    const rate = this.n(k);
+                    const desc = this.n(descPorIva[k] || 0);
+                    const netRounded = roundMoney(Math.max(0, this.n(base) - desc));
+                    baseNetaPorIva[k] = netRounded;
+                    ivaPorIva[k] = roundMoney(netRounded * (rate / 100));
+                }
+
+                const impuesto = roundMoney(Object.values(ivaPorIva).reduce((acc, val) => acc + this.n(val), 0));
+                subtotal = roundMoney(subtotal);
+                descuento = roundMoney(descuento);
+
                 const present = Object.keys(basePorIva).filter(k => Math.round((basePorIva[k] || 0) * 1e6) / 1e6 >
                     0).map(Number);
                 const preferred = [15, 0, 5, 8, 18];
@@ -617,7 +630,7 @@
                     subtotal,
                     descuento,
                     impuesto,
-                    total: subtotal - descuento + impuesto,
+                    total: roundMoney(subtotal - descuento + impuesto),
                     basePorIva,
                     baseNetaPorIva,
                     ivaPorIva,
