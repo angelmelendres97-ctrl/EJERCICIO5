@@ -92,6 +92,7 @@
                                 <option value="0">0%</option>
                                 <option value="5">5%</option>
                                 <option value="8">8%</option>
+                                <option value="12">12%</option>
                                 <option value="15">15%</option>
                                 <option value="18">18%</option>
                             </select>
@@ -638,7 +639,8 @@
                 clearTimeout(this.syncTimer);
                 this.syncTimer = setTimeout(() => {
                     this.livewire.set('data.detalles', payload, false);
-                    this.livewire.set('data.subtotal', this.round2(this.summary.subtotal).toFixed(2), false);
+                    this.livewire.set('data.subtotal', this.round2(this.summary.subtotal).toFixed(2),
+                    false);
                     this.livewire.set('data.total_descuento', this.round2(descuento).toFixed(2), false);
                     this.livewire.set('data.total_impuesto', this.round2(impuesto).toFixed(2), false);
                     this.livewire.set('data.total', this.round2(this.summary.total).toFixed(2), false);
