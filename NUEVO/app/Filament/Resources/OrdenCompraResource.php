@@ -205,11 +205,13 @@ class OrdenCompraResource extends Resource
         $proveedorFormSchema = ProveedorResource::getFormSchema(
             useRelationships: false,
             lockConnectionFields: true,
+            autoSelectExistingCompanies: false,
 
         );
         $productoFormSchema = ProductoResource::getFormSchema(
             useRelationships: false,
             lockConnectionFields: true,
+            autoSelectExistingWarehouses: false,
 
         );
         return $form
@@ -483,6 +485,9 @@ class OrdenCompraResource extends Resource
                                             'id_empresa' => $get('id_empresa'),
                                             'admg_id_empresa' => $get('amdg_id_empresa'),
                                             'admg_id_sucursal' => $get('amdg_id_sucursal'),
+                                            'dias_pago' => 0,
+                                            'limite_credito' => 0,
+                                            'empresas_proveedor' => [],
                                         ]);
                                     })
                                     ->action(function (array $data, Set $set): void {
@@ -668,6 +673,7 @@ class OrdenCompraResource extends Resource
                                     'id_empresa'        => $get('id_empresa'),
                                     'amdg_id_empresa'   => $get('amdg_id_empresa'),
                                     'amdg_id_sucursal'  => $get('amdg_id_sucursal'),
+                                    'bodegas'           => [],
                                 ]);
                             })
                             ->action(function (array $data): void {
