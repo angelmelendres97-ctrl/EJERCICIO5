@@ -18,7 +18,7 @@
         @foreach ($tarifas ?? [] as $rate)
             @php
                 $rateKey = (string) $rate;
-                $base = $basePorIva[$rateKey] ?? 0;
+                $base = $baseNetaPorIva[$rateKey] ?? 0;
                 $iva = $ivaPorIva[$rateKey] ?? 0;
             @endphp
             @if (round($base, 6) > 0)
