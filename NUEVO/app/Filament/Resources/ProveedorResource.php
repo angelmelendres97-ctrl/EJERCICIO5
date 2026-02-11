@@ -64,7 +64,11 @@ class ProveedorResource extends Resource
         return $form->schema(self::getFormSchema());
     }
 
-    public static function getFormSchema(bool $useRelationships = true, bool $lockConnectionFields = false): array
+    public static function getFormSchema(
+        bool $useRelationships = true,
+        bool $lockConnectionFields = false,
+        bool $autoSelectExistingCompanies = true,
+    ): array
     {
         $empresaSelect = Forms\Components\Select::make('id_empresa')
             ->label('Conexion')
@@ -624,8 +628,8 @@ class ProveedorResource extends Resource
 
                             return $empresasOptions;
                         })
-                        ->afterStateHydrated(function (Get $get, Set $set, $state) {
-                            if (!empty($state)) {
+                        ->afterStateHydrated(function (Get $get, Set $set, $state) use ($autoSelectExistingCompanies) {
+                            if (!$autoSelectExistingCompanies || !empty($state)) {
                                 return;
                             }
 
@@ -643,7 +647,6 @@ class ProveedorResource extends Resource
                                 ->get();
 
                             foreach ($empresas as $empresa) {
-
                                 $connectionName = self::getExternalConnectionName($empresa->id);
                                 if (!$connectionName) {
                                     continue;
@@ -655,21 +658,16 @@ class ProveedorResource extends Resource
                                         ->get();
 
                                     foreach ($externalEmpresas as $data_empresa) {
-
                                         $optionKey = $empresa->id . '-' . trim($data_empresa->empr_cod_empr);
                                         $empresaCode = trim($data_empresa->empr_cod_empr);
 
-                                        // -------------------------------
-                                        // VERIFICACIÓN DE EXISTENCIA
-                                        // -------------------------------
                                         $existeProveedor = DB::connection($connectionName)
                                             ->table('saeclpv')
                                             ->where('clpv_cod_empr', $empresaCode)
                                             ->where('clpv_ruc_clpv', $ruc)
-                                            ->where('clpv_clopv_clpv', 'PV') // proveedor
+                                            ->where('clpv_clopv_clpv', 'PV')
                                             ->exists();
 
-                                        // Si existe → lo marcamos
                                         if ($existeProveedor) {
                                             $seleccionados[] = $optionKey;
                                         }
@@ -680,9 +678,6 @@ class ProveedorResource extends Resource
                                 }
                             }
 
-                            // -------------------------------
-                            // Setear los checkboxes marcados
-                            // -------------------------------
                             $set('empresas_proveedor', $seleccionados);
                         })
                         ->columns(2)
