@@ -449,48 +449,19 @@
 
         @php
             // ==============================
-            // RESUMEN POR TARIFA (BASE/DESC/IVA) - SOLO TARIFAS EXISTENTES
+            // RESUMEN POR TARIFA (BASE/DESC/IVA) - MISMOS VALORES DEL RESUMEN DEL SISTEMA
             // ==============================
-            $basePorIva = [];
-            $descPorIva = [];
-            $ivaPorIva = [];
+            $resumenTotales = $resumenTotales ?? null;
 
-            foreach ($ordenCompra->detalles as $d) {
-                $rate = (float) ($d->impuesto ?? 0);
+            $basePorIva = (array) ($resumenTotales['basePorIva'] ?? []);
+            $baseNetaPorIva = (array) ($resumenTotales['baseNetaPorIva'] ?? []);
+            $ivaPorIva = (array) ($resumenTotales['ivaPorIva'] ?? []);
+            $tarifas = collect($resumenTotales['tarifas'] ?? [])->map(fn($rate) => (float) $rate)->values();
 
-                $cantidad = (float) ($d->cantidad ?? 0);
-                $costo = (float) ($d->costo ?? 0);
-                $descuento = (float) ($d->descuento ?? 0);
-
-                $base = $cantidad * $costo;
-
-                $basePorIva[$rate] = ($basePorIva[$rate] ?? 0) + $base;
-                $descPorIva[$rate] = ($descPorIva[$rate] ?? 0) + $descuento;
-
-                // IVA sobre base neta (base - descuento)
-                $baseNeta = max(0, $base - $descuento);
-                $ivaPorIva[$rate] = ($ivaPorIva[$rate] ?? 0) + $baseNeta * ($rate / 100);
-            }
-
-            // Tarifas existentes: SOLO las que tienen base > 0
-            $tarifas = collect($basePorIva)
-                ->filter(fn($base) => round((float) $base, 6) > 0)
-                ->keys()
-                ->map(fn($r) => (float) $r)
-                ->values();
-
-            // Orden personalizado (como tu formato): 15, 0, 5, 8, 18, ... (si existen)
-            $ordenPreferido = collect([15, 0, 5, 8, 18]);
-            $tarifas = $ordenPreferido
-                ->intersect($tarifas)
-                ->merge($tarifas->diff($ordenPreferido)->sort())
-                ->values();
-
-            // Totales generales
-            $subtotalGeneral = array_sum($basePorIva);
-            $descuentoGeneral = array_sum($descPorIva);
-            $ivaGeneral = array_sum($ivaPorIva);
-            $totalGeneral = $subtotalGeneral - $descuentoGeneral + $ivaGeneral;
+            $subtotalGeneral = (float) ($resumenTotales['subtotalGeneral'] ?? $ordenCompra->subtotal ?? 0);
+            $descuentoGeneral = (float) ($resumenTotales['descuentoGeneral'] ?? $ordenCompra->total_descuento ?? 0);
+            $ivaGeneral = (float) ($resumenTotales['ivaGeneral'] ?? $ordenCompra->total_impuesto ?? 0);
+            $totalGeneral = (float) ($resumenTotales['totalGeneral'] ?? $ordenCompra->total ?? 0);
 
             // Helpers
             $fmtRate = fn($r) => rtrim(rtrim(number_format((float) $r, 2, '.', ''), '0'), '.');
@@ -543,16 +514,16 @@
                         </tr>
 
                         {{-- TARIFA + IVA (intercalados, como factura real) --}}
-                        @foreach ($basePorIva as $rate => $base)
-                            @if (round($base, 6) > 0)
+                        @foreach ($tarifas as $rate)
+                            @if (round((float) ($basePorIva[(string) $rate] ?? ($basePorIva[$rate] ?? 0)), 6) > 0)
                                 <tr>
                                     <th class="left">TARIFA {{ $fmtRate($rate) }} %</th>
-                                    <td class="right">$ {{ number_format($base, 2) }}</td>
+                                    <td class="right">$ {{ number_format($baseNetaPorIva[(string) $rate] ?? ($baseNetaPorIva[$rate] ?? 0), 2) }}</td>
                                 </tr>
 
                                 <tr>
                                     <th class="left">IVA {{ $fmtRate($rate) }} %</th>
-                                    <td class="right">$ {{ number_format($ivaPorIva[$rate] ?? 0, 2) }}</td>
+                                    <td class="right">$ {{ number_format($ivaPorIva[(string) $rate] ?? ($ivaPorIva[$rate] ?? 0), 2) }}</td>
                                 </tr>
                             @endif
                         @endforeach
