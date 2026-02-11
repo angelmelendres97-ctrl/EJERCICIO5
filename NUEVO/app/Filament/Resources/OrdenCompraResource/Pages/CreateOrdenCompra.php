@@ -234,15 +234,17 @@ class CreateOrdenCompra extends CreateRecord
                 $esAuxiliar = $this->isAuxiliarItem($detalle);
                 if ($esAuxiliar) {
                     $descripcionAuxiliar = $detalle->dped_desc_auxiliar ?? $detalle->dped_desc_axiliar;
-                    $auxiliarDescripcion = trim(collect([
-                        $detalle->dped_cod_auxiliar ? 'Código: ' . $detalle->dped_cod_auxiliar : null,
-                        $descripcionAuxiliar ? 'Nombre: ' . $descripcionAuxiliar : null,
-                    ])->filter()->implode(' | '));
 
                     $auxiliarData = [
                         'codigo' => $detalle->dped_cod_auxiliar,
-                        'descripcion' => $descripcionAuxiliar ?: ($detalle->dped_det_dped ?? null),
+
+                        // ✅ guardamos ambos por separado
+                        'desc_auxiliar' => $descripcionAuxiliar,              // dped_desc_auxiliar
+                        'det_pedido'    => $detalle->dped_det_dped ?? null,   // dped_det_dped
+
+                        // si quieres mantener compatibilidad con lo anterior:
                         'descripcion_auxiliar' => $descripcionAuxiliar,
+                        'descripcion' => $detalle->dped_det_dped ?? $descripcionAuxiliar ?? null,
                     ];
                 }
 
@@ -268,6 +270,16 @@ class CreateOrdenCompra extends CreateRecord
                     ?? $detalle->unid_nom_unid
                     ?? 'UN';
 
+                $auxDesc = trim((string) ($detalle->dped_desc_auxiliar ?? $detalle->dped_desc_axiliar ?? ''));
+                $auxDesc = $auxDesc !== '' ? $auxDesc : null;
+
+                // ✅ Código real a mostrar en columna "Código"
+                $codigoAux = trim((string) ($detalle->dped_cod_auxiliar ?? ''));
+                $codigoAux = $codigoAux !== '' ? $codigoAux : null;
+
+                $codigoVisual = $codigoAux ?: ($codigoProducto ?: null);
+
+                $codigoVisual = $auxDesc ?: ($codigoProducto ?: null);
 
                 return [
                     'id_bodega' => $id_bodega_item, // Set the correct warehouse for this line
@@ -278,7 +290,7 @@ class CreateOrdenCompra extends CreateRecord
                     'es_auxiliar' => $esAuxiliar,
                     'es_servicio' => $esServicio,
                     'detalle_pedido' => $detallePedido,
-                    'descripcion_auxiliar' => $auxiliarData['descripcion_auxiliar'] ?? null,
+                    //'descripcion_auxiliar' => $auxiliarData['descripcion_auxiliar'] ?? null,
                     'producto_auxiliar' => $auxiliarDescripcion,
                     'producto_servicio' => $servicioDescripcion,
                     'detalle' => $auxiliarData ? json_encode($auxiliarData, JSON_UNESCAPED_UNICODE) : null,
@@ -290,6 +302,9 @@ class CreateOrdenCompra extends CreateRecord
                     'descuento' => 0,
                     'impuesto' => $impuesto,
                     'valor_impuesto' => number_format($valor_impuesto, 6, '.', ''),
+                    'codigo_visual' => $codigoVisual,
+                    'descripcion_auxiliar' => $auxDesc,
+
                 ];
             })->values()->toArray();
 

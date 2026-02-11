@@ -68,19 +68,38 @@ class EditOrdenCompra extends EditRecord
         if (isset($data['detalles']) && is_array($data['detalles'])) {
             foreach ($data['detalles'] as $index => $detalle) {
                 $detalleData = $this->decodeDetalleData($detalle['detalle'] ?? null);
+                $codigoAux = trim((string) ($detalleData['codigo'] ?? ''));
+
+                // Si es auxiliar, este será el código mostrado en la columna "Código"
+                if ($codigoAux !== '') {
+                    $data['detalles'][$index]['codigo_visual'] = $codigoAux;
+                } else {
+                    $data['detalles'][$index]['codigo_visual'] = null;
+                }
+
                 $codigoProducto = $detalle['codigo_producto'] ?? null;
+                $auxDesc = trim((string) ($detalleData['desc_auxiliar'] ?? $detalleData['descripcion_auxiliar'] ?? ''));
+                $auxDet  = trim((string) ($detalleData['det_pedido'] ?? $detalleData['descripcion'] ?? ''));
+
+                $data['detalles'][$index]['descripcion_mostrar'] =
+                    ($auxDesc && $auxDet) ? ($auxDesc . ' - ' . $auxDet) : ($auxDesc ?: ($auxDet ?: null));
+
                 $esServicio = $this->isServicioItem($codigoProducto);
                 $esAuxiliar = !empty($detalleData['codigo'])
+                    || !empty($detalleData['desc_auxiliar'])
                     || !empty($detalleData['descripcion_auxiliar'])
+                    || !empty($detalleData['det_pedido'])
                     || !empty($detalleData['descripcion']);
+
 
                 $data['detalles'][$index]['es_auxiliar'] = $esAuxiliar;
                 $data['detalles'][$index]['es_servicio'] = $esServicio;
 
                 if ($esAuxiliar) {
-                    $auxiliarNombre = $detalleData['descripcion_auxiliar']
-                        ?? $detalleData['descripcion']
+                    $auxiliarNombre = $detalleData['desc_auxiliar']
+                        ?? $detalleData['descripcion_auxiliar']
                         ?? null;
+
 
                     $data['detalles'][$index]['descripcion_auxiliar'] = $auxiliarNombre;
 
@@ -105,9 +124,10 @@ class EditOrdenCompra extends EditRecord
                     $pedidoKey = $this->detallePedidoKey($detalle);
                     $detallePedido = $detallePorPedido[$pedidoKey] ?? null;
                     $detallePedido = $detallePedido
-                        ?? $detalleData['descripcion']
-                        ?? $detalleData['descripcion_auxiliar']
+                        ?? ($detalleData['det_pedido'] ?? null)
+                        ?? ($detalleData['descripcion'] ?? null) // compat: antes usabas descripcion
                         ?? null;
+
 
                     $data['detalles'][$index]['detalle_pedido'] = $detallePedido;
                 }
@@ -433,8 +453,16 @@ class EditOrdenCompra extends EditRecord
 
                 $auxiliarData = [
                     'codigo' => $detalle->dped_cod_auxiliar ?? null,
-                    'descripcion' => $descripcionAuxiliar ?: ($detalle->dped_det_dped ?? null),
-                    'descripcion_auxiliar' => $descripcionAuxiliar,
+
+                    // dped_desc_auxiliar
+                    'desc_auxiliar' => $descripcionAuxiliar,
+                    'descripcion_auxiliar' => $descripcionAuxiliar, // compatibilidad
+
+                    // dped_det_dped
+                    'det_pedido' => $detalle->dped_det_dped ?? null,
+
+                    // compatibilidad con lo viejo (si antes leías "descripcion")
+                    'descripcion' => $detalle->dped_det_dped ?? null,
                 ];
             }
 

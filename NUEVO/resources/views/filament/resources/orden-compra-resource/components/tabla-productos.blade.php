@@ -17,12 +17,7 @@
                             <span class="text-[10px]" x-text="sortIndicator('codigo')"></span>
                         </div>
                     </th>
-                    <th class="p-2 min-w-[28rem] cursor-pointer select-none" @click="toggleSort('descripcion')">
-                        <div class="inline-flex items-center gap-1">
-                            <span>Descripción</span>
-                            <span class="text-[10px]" x-text="sortIndicator('descripcion')"></span>
-                        </div>
-                    </th>
+
                     <th class="p-2">Unidad</th>
                     <th class="p-2">Cant.</th>
                     <th class="p-2">Costo</th>
@@ -31,6 +26,12 @@
                     <th class="p-2">IVA %</th>
 
                     <th class="p-2 text-right">Total</th>
+                    <th class="p-2 min-w-[28rem] cursor-pointer select-none" @click="toggleSort('descripcion')">
+                        <div class="inline-flex items-center gap-1">
+                            <span>Descripción</span>
+                            <span class="text-[10px]" x-text="sortIndicator('descripcion')"></span>
+                        </div>
+                    </th>
                 </tr>
             </thead>
             <tbody>
@@ -71,14 +72,10 @@
                                 x-model="row.producto_filtro" readonly @click="openProductoModal(row)" />
                         </td>
 
-                        <td class="p-1"><input class="fi-input w-28" x-model="row.codigo_producto" readonly></td>
                         <td class="p-1">
-                            <input class="fi-input w-64"
-                                :value="(row.detalle_pedido && String(row.detalle_pedido).trim() !== '') ? row
-                                    .detalle_pedido:
-                                    descripcionItem(row)"
-                                readonly>
+                            <input class="fi-input w-28" :value="codigoItem(row)" readonly>
                         </td>
+
                         <td class="p-1"><input class="fi-input w-20" x-model="row.unidad" readonly></td>
 
                         <td class="p-1"><input type="number" step="0.000001" class="fi-input w-20"
@@ -100,6 +97,10 @@
                             </select>
                         </td>
                         <td class="p-1 text-right font-semibold" x-text="money4(lineTotal(row))"></td>
+                        <td class="p-1">
+                            <input class="fi-input w-64" :value="descripcionColumna(row)" readonly>
+
+                        </td>
                     </tr>
                 </template>
             </tbody>
@@ -374,6 +375,8 @@
                     costo: this.n(row.costo ?? 0),
                     descuento: this.n(row.descuento ?? 0),
                     impuesto: String(row.impuesto ?? '0'),
+                    codigo_visual: row.codigo_visual ?? '',
+
                 }
             },
 
@@ -532,6 +535,29 @@
                 if (row.es_auxiliar) return row.producto_auxiliar || row.descripcion_auxiliar || row.producto || '';
                 return row.producto || '';
             },
+            codigoItem(row) {
+                const aux = String(row.codigo_visual ?? '').trim();
+                if (aux !== '') return aux;
+
+                const cod = String(row.codigo_producto ?? '').trim();
+                return cod;
+            },
+
+            descripcionColumna(row) {
+                const aux = String(row.descripcion_auxiliar ?? '').trim(); // dped_desc_auxiliar
+                const det = String(row.detalle_pedido ?? '').trim(); // dped_det_dped
+
+                // ✅ requerido: "aux - det"
+                if (aux !== '' && det !== '') return `${aux} - ${det}`;
+
+                // fallback
+                if (aux !== '') return aux;
+                if (det !== '') return det;
+
+                // último fallback: nombre del producto / auxiliar
+                return this.descripcionItem(row);
+            },
+
             addRow() {
                 this.rows.push(this.normalizeRow({}));
                 this.sync();

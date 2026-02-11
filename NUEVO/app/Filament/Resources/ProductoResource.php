@@ -24,6 +24,8 @@ use Filament\Forms\Components\Actions\Action;
 use Filament\Forms\Components\Placeholder;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\HtmlString;
+use Illuminate\Validation\Rule;
+use Illuminate\Database\Eloquent\Model;
 use Filament\Forms\Components\Hidden;
 
 
@@ -77,7 +79,8 @@ class ProductoResource extends Resource
     public static function getFormSchema(
         bool $useRelationships = true,
         bool $lockConnectionFields = false,
-        bool $useModalFields = false
+        bool $useModalFields = false,
+        bool $autoSelectExistingWarehouses = true,
     ): array {
         $empresaSelect = Forms\Components\Select::make('id_empresa')
             ->label('Conexion')
@@ -180,8 +183,8 @@ class ProductoResource extends Resource
             ->default([])
             ->options($bodegasOptions);
 
-        $bodegasField->afterStateHydrated(function (Get $get, Set $set, $state) {
-            if (!empty($state)) {
+        $bodegasField->afterStateHydrated(function (Get $get, Set $set, $state) use ($autoSelectExistingWarehouses) {
+            if (!$autoSelectExistingWarehouses || !empty($state)) {
                 return;
             }
 
@@ -547,7 +550,7 @@ class ProductoResource extends Resource
                     Forms\Components\TextInput::make('sku')
                         ->label('Codigo')
                         ->required()
-                        ->unique(table: Producto::class, column: 'sku', ignoreRecord: true)
+                        ->rule(fn (?Model $record) => Rule::unique('productos', 'sku')->ignore($record?->getKey(), 'id'))
                         ->maxLength(255),
                     Forms\Components\TextInput::make('nombre')
                         ->required()

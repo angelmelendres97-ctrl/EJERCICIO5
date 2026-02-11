@@ -342,12 +342,38 @@
                         $codigoMostrar = $auxiliarData['codigo'] ?? $detalle->codigo_producto;
 
                         // Base (lo que venga del pedido / producto / json)
-                        $descripcionBase = trim($auxiliarData['descripcion'] ?? ($detalle->producto ?? ''));
+                        // =============================
+                        // NUEVO: dped_desc_auxiliar - dped_det_dped
+                        // =============================
 
-                        // Nombre "bonito" (catálogo)
+                        // dped_desc_auxiliar
+                        $auxDesc = trim(
+                            (string) ($auxiliarData['desc_auxiliar'] ?? ($auxiliarData['descripcion_auxiliar'] ?? '')),
+                        );
+
+                        // dped_det_dped
+                        $auxDet = trim(
+                            (string) ($auxiliarData['det_pedido'] ??
+                                ($auxiliarData['det_pedido_desc'] ?? // por si usas otro nombre
+                                    ($auxiliarData['descripcion'] ?? // compatibilidad con lo que guardabas antes
+                                        ''))),
+                        );
+
+                        // Base (la que se imprime)
+                        if ($auxDesc !== '' && $auxDet !== '') {
+                            $descripcionBase = $auxDesc . ' - ' . $auxDet;
+                        } elseif ($auxDesc !== '') {
+                            $descripcionBase = $auxDesc;
+                        } elseif ($auxDet !== '') {
+                            $descripcionBase = $auxDet;
+                        } else {
+                            $descripcionBase = trim($detalle->producto ?? '');
+                        }
+
+                        // Nombre "bonito" (catálogo / auxiliar)
                         $nombreProducto = trim(
-                            $auxiliarData['descripcion_auxiliar'] ??
-                                ($productoNombres[$detalle->codigo_producto] ?? ''),
+                            $auxiliarData['descripcion_auxiliar'] ?? $auxDesc ?:
+                            $productoNombres[$detalle->codigo_producto] ?? '',
                         );
 
                         // Normaliza texto para comparar (mayúsculas y espacios)
