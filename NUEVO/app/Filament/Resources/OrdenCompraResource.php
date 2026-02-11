@@ -114,6 +114,11 @@ class OrdenCompraResource extends Resource
             ->merge($tarifas->diff($ordenPreferido)->sort())
             ->values();
 
+        $baseNetaPorIva = [];
+        foreach ($basePorIva as $rateKey => $baseBruta) {
+            $baseNetaPorIva[$rateKey] = max(0, (float) $baseBruta - (float) ($descPorIva[$rateKey] ?? 0));
+        }
+
         $subtotalGeneral = array_sum($basePorIva);
         $descuentoGeneral = array_sum($descPorIva);
         $ivaGeneral = array_sum($ivaPorIva);
@@ -121,6 +126,7 @@ class OrdenCompraResource extends Resource
 
         return [
             'basePorIva' => $basePorIva,
+            'baseNetaPorIva' => $baseNetaPorIva,
             'ivaPorIva' => $ivaPorIva,
             'tarifas' => $tarifas,
             'subtotalGeneral' => $subtotalGeneral,
