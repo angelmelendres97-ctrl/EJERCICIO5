@@ -71,13 +71,12 @@
                                 x-model="row.producto_filtro" readonly @click="openProductoModal(row)" />
                         </td>
 
-                        <td class="p-1"><input class="fi-input w-28" x-model="row.codigo_producto" readonly></td>
                         <td class="p-1">
-                            <input class="fi-input w-64"
-                                :value="(row.detalle_pedido && String(row.detalle_pedido).trim() !== '') ? row
-                                    .detalle_pedido:
-                                    descripcionItem(row)"
-                                readonly>
+                            <input class="fi-input w-28" :value="codigoItem(row)" readonly>
+                        </td>
+                        <td class="p-1">
+                            <input class="fi-input w-64" :value="descripcionColumna(row)" readonly>
+
                         </td>
                         <td class="p-1"><input class="fi-input w-20" x-model="row.unidad" readonly></td>
 
@@ -374,6 +373,8 @@
                     costo: this.n(row.costo ?? 0),
                     descuento: this.n(row.descuento ?? 0),
                     impuesto: String(row.impuesto ?? '0'),
+                    codigo_visual: row.codigo_visual ?? '',
+
                 }
             },
 
@@ -532,6 +533,29 @@
                 if (row.es_auxiliar) return row.producto_auxiliar || row.descripcion_auxiliar || row.producto || '';
                 return row.producto || '';
             },
+            codigoItem(row) {
+                const aux = String(row.codigo_visual ?? '').trim();
+                if (aux !== '') return aux;
+
+                const cod = String(row.codigo_producto ?? '').trim();
+                return cod;
+            },
+
+            descripcionColumna(row) {
+                const aux = String(row.descripcion_auxiliar ?? '').trim(); // dped_desc_auxiliar
+                const det = String(row.detalle_pedido ?? '').trim(); // dped_det_dped
+
+                // ✅ requerido: "aux - det"
+                if (aux !== '' && det !== '') return `${aux} - ${det}`;
+
+                // fallback
+                if (aux !== '') return aux;
+                if (det !== '') return det;
+
+                // último fallback: nombre del producto / auxiliar
+                return this.descripcionItem(row);
+            },
+
             addRow() {
                 this.rows.push(this.normalizeRow({}));
                 this.sync();
