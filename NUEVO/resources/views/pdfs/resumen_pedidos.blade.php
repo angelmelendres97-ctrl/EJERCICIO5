@@ -321,7 +321,7 @@
                 <div class="col-8">
                     <div class="flex" style="margin-top: 5px; text-align: right !important;">
                         <div class="left-info">
-                            <b>TOTAL GRUPO: $ {{ number_format($total_grupo, 2) }} </b>
+                            <b>Total {{ $grupo['empresa_nombre'] ?: 'Empresa' }}: $ {{ number_format($total_grupo, 2) }} </b>
                             <br>
                         </div>
                     </div>
@@ -332,7 +332,7 @@
                         <thead>
                             <tr>
                                 <th style="width:80%; border: none; border-collapse: collapse;" class="left"></th>
-                                <td style="width:10%" class="right"><b>TOTAL $</b></td>
+                                <td style="width:10%" class="right"><b>Total {{ $grupo['empresa_nombre'] ?: 'Empresa' }} $</b></td>
                                 <td style="width:10%" class="right"><b>$ {{ number_format($total_grupo, 2) }}</b></td>
                             </tr>
                         </thead>
