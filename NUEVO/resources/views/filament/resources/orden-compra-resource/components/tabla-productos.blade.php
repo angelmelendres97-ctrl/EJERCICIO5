@@ -92,6 +92,7 @@
                                 <option value="0">0%</option>
                                 <option value="5">5%</option>
                                 <option value="8">8%</option>
+                                <option value="12">12%</option>
                                 <option value="15">15%</option>
                                 <option value="18">18%</option>
                             </select>
@@ -125,7 +126,7 @@
             <template x-for="t in summary.tarifas" :key="`t-${t}`">
                 <tr>
                     <th class="text-right pr-2" x-text="`Tarifa ${fmtRate(t)} %`"></th>
-                    <td class="text-right" x-text="money2(summary.basePorIva[t] || 0)"></td>
+                    <td class="text-right" x-text="money2(summary.baseNetaPorIva[t] || 0)"></td>
                 </tr>
             </template>
             <template x-for="t in summary.tarifas" :key="`i-${t}`">
@@ -213,6 +214,7 @@
                 impuesto: 0,
                 total: 0,
                 basePorIva: {},
+                baseNetaPorIva: {},
                 ivaPorIva: {},
                 tarifas: []
             },
@@ -577,6 +579,7 @@
             },
             sync() {
                 const basePorIva = {},
+                    baseNetaPorIva = {},
                     ivaPorIva = {};
                 let subtotal = 0,
                     descuento = 0,
@@ -592,6 +595,7 @@
                     descuento += desc;
                     impuesto += iva;
                     basePorIva[k] = (basePorIva[k] || 0) + base;
+                    baseNetaPorIva[k] = (baseNetaPorIva[k] || 0) + net;
                     ivaPorIva[k] = (ivaPorIva[k] || 0) + iva;
                 }
                 const present = Object.keys(basePorIva).filter(k => Math.round((basePorIva[k] || 0) * 1e6) / 1e6 >
@@ -605,6 +609,7 @@
                     impuesto,
                     total: subtotal - descuento + impuesto,
                     basePorIva,
+                    baseNetaPorIva,
                     ivaPorIva,
                     tarifas
                 };
@@ -626,10 +631,10 @@
                 clearTimeout(this.syncTimer);
                 this.syncTimer = setTimeout(() => {
                     this.livewire.set('data.detalles', payload, false);
-                    this.livewire.set('data.subtotal', subtotal.toFixed(2), false);
+                    this.livewire.set('data.subtotal', this.summary.subtotal.toFixed(2), false);
                     this.livewire.set('data.total_descuento', descuento.toFixed(2), false);
                     this.livewire.set('data.total_impuesto', impuesto.toFixed(2), false);
-                    this.livewire.set('data.total', (subtotal - descuento + impuesto).toFixed(2), false);
+                    this.livewire.set('data.total', this.summary.total.toFixed(2), false);
                     this.livewire.set('data.resumen_totales', this.summary, false);
                 }, 40);
             }
