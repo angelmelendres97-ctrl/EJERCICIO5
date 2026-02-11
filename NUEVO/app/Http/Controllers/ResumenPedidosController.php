@@ -23,7 +23,7 @@ class ResumenPedidosController extends Controller
         $resumenPedidos->load('empresa', 'usuario');
         $detalles = $resumenPedidos->detalles()
             ->whereHas('ordenCompra', fn($query) => $query->where('anulada', false))
-            ->with('ordenCompra')
+            ->with('ordenCompra.empresa')
             ->get();
 
         $groupedDetalles = $this->buildGroupedDetalles($detalles);
@@ -100,7 +100,7 @@ class ResumenPedidosController extends Controller
                 [$conexionId, $empresaId, $sucursalId] = array_pad(explode('|', (string) $key, 3), 3, null);
                 $orden = $items->first()->ordenCompra;
                 $conexionNombre = $orden->empresa->nombre_empresa ?? '';
-                $empresaNombre = $nombresExternos['empresas'][$conexionId][$empresaId] ?? $empresaId;
+                $empresaNombre = $this->resolveNombreEmpresaPorOrden($orden, $nombresExternos);
                 $sucursalNombre = $nombresExternos['sucursales'][$conexionId][$empresaId][$sucursalId] ?? $sucursalId;
 
                 return [
@@ -167,5 +167,23 @@ class ResumenPedidosController extends Controller
             'empresas' => $empresaNombrePorConexion,
             'sucursales' => $sucursalNombrePorConexion,
         ];
+    }
+
+    protected function resolveNombreEmpresaPorOrden($orden, array $nombresExternos): string
+    {
+        $nombrePorDefecto = $orden->empresa->nombre_empresa ?? (string) $orden->id_empresa;
+
+        if ($orden->presupuesto === 'PB') {
+            return $orden->empresa->nombre_pb ?: $nombrePorDefecto;
+        }
+
+        if ($orden->presupuesto === 'AZ') {
+            $nombreAz = $nombresExternos['empresas'][$orden->id_empresa][$orden->amdg_id_empresa] ?? null;
+            if (! empty($nombreAz)) {
+                return $nombreAz;
+            }
+        }
+
+        return $nombrePorDefecto;
     }
 }

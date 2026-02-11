@@ -92,6 +92,7 @@
                                 <option value="0">0%</option>
                                 <option value="5">5%</option>
                                 <option value="8">8%</option>
+                                <option value="12">12%</option>
                                 <option value="15">15%</option>
                                 <option value="18">18%</option>
                             </select>
@@ -125,7 +126,7 @@
             <template x-for="t in summary.tarifas" :key="`t-${t}`">
                 <tr>
                     <th class="text-right pr-2" x-text="`Tarifa ${fmtRate(t)} %`"></th>
-                    <td class="text-right" x-text="money2(summary.basePorIva[t] || 0)"></td>
+                    <td class="text-right" x-text="money2(summary.baseNetaPorIva[t] || 0)"></td>
                 </tr>
             </template>
             <template x-for="t in summary.tarifas" :key="`i-${t}`">
@@ -213,6 +214,7 @@
                 impuesto: 0,
                 total: 0,
                 basePorIva: {},
+                baseNetaPorIva: {},
                 ivaPorIva: {},
                 tarifas: []
             },
@@ -320,6 +322,9 @@
                 const x = Number(v);
                 return Number.isFinite(x) ? x : 0;
             },
+            round2(v) {
+                return Math.round((this.n(v) + Number.EPSILON) * 100) / 100;
+            },
             normalizeBodegaId(v) {
                 const raw = String(v ?? '').trim();
                 if (raw === '') return '';
@@ -339,7 +344,7 @@
                 return String(Number(r).toFixed(2)).replace(/\.00$/, '').replace(/(\.[1-9])0$/, '$1')
             },
             money2(v) {
-                return '$ ' + this.n(v).toLocaleString('en-US', {
+                return '$ ' + this.round2(v).toLocaleString('en-US', {
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 2
                 });
@@ -577,34 +582,42 @@
             },
             sync() {
                 const basePorIva = {},
+                    baseNetaPorIva = {},
                     ivaPorIva = {};
                 let subtotal = 0,
-                    descuento = 0,
-                    impuesto = 0;
+                    descuento = 0;
                 for (const r of this.rows) {
                     const rate = this.n(r.impuesto);
                     const k = String(rate);
                     const base = this.lineSubtotal(r);
                     const desc = this.n(r.descuento);
                     const net = Math.max(0, base - desc);
-                    const iva = net * (rate / 100);
                     subtotal += base;
                     descuento += desc;
-                    impuesto += iva;
                     basePorIva[k] = (basePorIva[k] || 0) + base;
-                    ivaPorIva[k] = (ivaPorIva[k] || 0) + iva;
+                    baseNetaPorIva[k] = (baseNetaPorIva[k] || 0) + net;
                 }
+
+                let impuesto = 0;
+                Object.keys(baseNetaPorIva).forEach((k) => {
+                    const baseNetaRounded = this.round2(baseNetaPorIva[k] || 0);
+                    baseNetaPorIva[k] = baseNetaRounded;
+                    ivaPorIva[k] = this.round2(baseNetaRounded * (this.n(k) / 100));
+                    impuesto += ivaPorIva[k];
+                });
+
                 const present = Object.keys(basePorIva).filter(k => Math.round((basePorIva[k] || 0) * 1e6) / 1e6 >
                     0).map(Number);
                 const preferred = [15, 0, 5, 8, 18];
                 const tarifas = [...preferred.filter(x => present.includes(x)), ...present.filter(x => !preferred
                     .includes(x)).sort((a, b) => a - b)];
                 this.summary = {
-                    subtotal,
-                    descuento,
-                    impuesto,
-                    total: subtotal - descuento + impuesto,
+                    subtotal: this.round2(subtotal),
+                    descuento: this.round2(descuento),
+                    impuesto: this.round2(impuesto),
+                    total: this.round2(this.round2(subtotal) - this.round2(descuento) + this.round2(impuesto)),
                     basePorIva,
+                    baseNetaPorIva,
                     ivaPorIva,
                     tarifas
                 };
@@ -626,10 +639,11 @@
                 clearTimeout(this.syncTimer);
                 this.syncTimer = setTimeout(() => {
                     this.livewire.set('data.detalles', payload, false);
-                    this.livewire.set('data.subtotal', subtotal.toFixed(2), false);
-                    this.livewire.set('data.total_descuento', descuento.toFixed(2), false);
-                    this.livewire.set('data.total_impuesto', impuesto.toFixed(2), false);
-                    this.livewire.set('data.total', (subtotal - descuento + impuesto).toFixed(2), false);
+                    this.livewire.set('data.subtotal', this.round2(this.summary.subtotal).toFixed(2),
+                    false);
+                    this.livewire.set('data.total_descuento', this.round2(descuento).toFixed(2), false);
+                    this.livewire.set('data.total_impuesto', this.round2(impuesto).toFixed(2), false);
+                    this.livewire.set('data.total', this.round2(this.summary.total).toFixed(2), false);
                     this.livewire.set('data.resumen_totales', this.summary, false);
                 }, 40);
             }

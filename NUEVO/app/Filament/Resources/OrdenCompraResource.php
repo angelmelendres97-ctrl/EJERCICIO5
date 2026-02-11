@@ -84,6 +84,7 @@ class OrdenCompraResource extends Resource
         $basePorIva = [];
         $descPorIva = [];
         $ivaPorIva = [];
+        $round2 = static fn(float $value): float => round($value + 0.000000001, 2);
 
         foreach ($detalles as $detalle) {
             $rate = (float) ($detalle['impuesto'] ?? 0);
@@ -98,8 +99,7 @@ class OrdenCompraResource extends Resource
             $basePorIva[$rateKey] = ($basePorIva[$rateKey] ?? 0) + $base;
             $descPorIva[$rateKey] = ($descPorIva[$rateKey] ?? 0) + $descuento;
 
-            $baseNeta = max(0, $base - $descuento);
-            $ivaPorIva[$rateKey] = ($ivaPorIva[$rateKey] ?? 0) + ($baseNeta * ($rate / 100));
+            $ivaPorIva[$rateKey] = 0;
         }
 
         $tarifas = collect($basePorIva)
@@ -114,13 +114,21 @@ class OrdenCompraResource extends Resource
             ->merge($tarifas->diff($ordenPreferido)->sort())
             ->values();
 
-        $subtotalGeneral = array_sum($basePorIva);
-        $descuentoGeneral = array_sum($descPorIva);
-        $ivaGeneral = array_sum($ivaPorIva);
-        $totalGeneral = $subtotalGeneral - $descuentoGeneral + $ivaGeneral;
+        $baseNetaPorIva = [];
+        foreach ($basePorIva as $rateKey => $baseBruta) {
+            $baseNeta = max(0, (float) $baseBruta - (float) ($descPorIva[$rateKey] ?? 0));
+            $baseNetaPorIva[$rateKey] = $round2($baseNeta);
+            $ivaPorIva[$rateKey] = $round2($baseNetaPorIva[$rateKey] * (((float) $rateKey) / 100));
+        }
+
+        $subtotalGeneral = $round2(array_sum($basePorIva));
+        $descuentoGeneral = $round2(array_sum($descPorIva));
+        $ivaGeneral = $round2(array_sum($ivaPorIva));
+        $totalGeneral = $round2($subtotalGeneral - $descuentoGeneral + $ivaGeneral);
 
         return [
             'basePorIva' => $basePorIva,
+            'baseNetaPorIva' => $baseNetaPorIva,
             'ivaPorIva' => $ivaPorIva,
             'tarifas' => $tarifas,
             'subtotalGeneral' => $subtotalGeneral,
@@ -175,20 +183,31 @@ class OrdenCompraResource extends Resource
     {
         $subtotalGeneral = 0;
         $descuentoGeneral = 0;
-        $impuestoGeneral = 0;
+        $baseNetaPorIva = [];
+        $round2 = static fn(float $value): float => round($value + 0.000000001, 2);
 
         foreach ($detalles as $detalle) {
             $cantidad = floatval($detalle['cantidad'] ?? 0);
             $costo = floatval($detalle['costo'] ?? 0);
             $descuento = floatval($detalle['descuento'] ?? 0);
             $porcentajeIva = floatval($detalle['impuesto'] ?? 0);
+            $rateKey = (string) $porcentajeIva;
 
             $subtotalItem = $cantidad * $costo;
             $baseNeta = max(0, $subtotalItem - $descuento);
-            $impuestoGeneral += $baseNeta * ($porcentajeIva / 100);
             $subtotalGeneral += $subtotalItem;
             $descuentoGeneral += $descuento;
+            $baseNetaPorIva[$rateKey] = ($baseNetaPorIva[$rateKey] ?? 0) + $baseNeta;
         }
+
+        $impuestoGeneral = 0;
+        foreach ($baseNetaPorIva as $rateKey => $baseNeta) {
+            $impuestoGeneral += $round2($round2((float) $baseNeta) * (((float) $rateKey) / 100));
+        }
+
+        $subtotalGeneral = $round2($subtotalGeneral);
+        $descuentoGeneral = $round2($descuentoGeneral);
+        $impuestoGeneral = $round2($impuestoGeneral);
 
         $totalGeneral = ($subtotalGeneral - $descuentoGeneral) + $impuestoGeneral;
 
