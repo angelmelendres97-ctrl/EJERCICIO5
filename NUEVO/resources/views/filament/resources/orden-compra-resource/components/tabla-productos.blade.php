@@ -2,93 +2,189 @@
     $rows = $detalles ?? [];
 @endphp
 
+
+<style>
+    /* Contenedor con scroll horizontal */
+    .oc-table-wrap {
+        overflow-x: auto;
+        overflow-y: visible;
+        border: 1px solid #e5e7eb;
+        border-radius: 12px;
+    }
+
+    /* Tabla: fija los anchos por columna */
+    .oc-table {
+        width: 100%;
+        table-layout: fixed;
+        /* CLAVE: respeta anchos */
+        border-collapse: collapse;
+        font-size: 12px;
+        min-width: 1100px;
+        /* evita que todo se aplaste demasiado */
+    }
+
+    .oc-table thead th {
+        background: #f3f4f6;
+        padding: 8px;
+        text-align: left;
+        white-space: nowrap;
+        border-bottom: 1px solid #e5e7eb;
+    }
+
+    .oc-table td {
+        padding: 4px;
+        border-top: 1px solid #e5e7eb;
+        vertical-align: top;
+    }
+
+    /* Asegura que inputs/selects no revienten el ancho */
+    .oc-table input,
+    .oc-table select {
+        width: 100%;
+        max-width: 100%;
+        box-sizing: border-box;
+    }
+
+    /* Truncar texto visual en celdas que pueden crecer */
+    .oc-ellipsis {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    /* Anchos por columna (ajusta a gusto) */
+    .col-x {
+        width: 34px;
+    }
+
+    /* botón X */
+    .col-bodega {
+        width: 150px;
+    }
+
+    /* ✅ Bodega más pequeña */
+    .col-producto {
+        width: 180px;
+    }
+
+    /* un poco más grande */
+    .col-iva {
+        width: 100px;
+    }
+
+    /* para que se vea completo "IVA %" y el select */
+
+
+    .col-codigo {
+        width: 140px;
+    }
+
+    .col-unidad {
+        width: 70px;
+    }
+
+    .col-num {
+        width: 90px;
+    }
+
+    /* cant/costo/desc */
+    .col-subtotal {
+        width: 110px;
+    }
+
+    .col-iva {
+        width: 80px;
+    }
+
+    .col-total {
+        width: 110px;
+    }
+
+    .col-desc {
+        width: 360px;
+    }
+
+    /* descripción larga */
+</style>
+
+
 <div wire:ignore x-data="ordenCompraProductosTable(@js($rows))" x-init="init()"
     x-on:oc-detalles-sync.window="if ($event.detail?.detalles) mergeServerRows($event.detail.detalles)" class="space-y-4">
-    <div class="overflow-x-auto overflow-y-visible border rounded-xl border-gray-200 dark:border-gray-700">
-        <table class="w-full text-xs">
-            <thead class="bg-gray-100 dark:bg-gray-800">
+    <div class="oc-table-wrap">
+        <table class="oc-table">
+            <thead>
                 <tr>
-                    <th class="p-2 w-12"></th>
-                    <th class="p-2 w-40">Bodega</th>
-                    <th class="p-2 w-28">Producto</th>
-                    <th class="p-2 w-28 cursor-pointer select-none" @click="toggleSort('codigo')">
-                        <div class="inline-flex items-center gap-1">
+                    <th class="col-x"></th>
+                    <th class="col-bodega">Bodega</th>
+                    <th class="col-producto">Producto</th>
+
+                    <th class="col-codigo" @click="toggleSort('codigo')" style="cursor:pointer; user-select:none;">
+                        <div style="display:inline-flex; align-items:center; gap:6px;">
                             <span>Código</span>
-                            <span class="text-[10px]" x-text="sortIndicator('codigo')"></span>
+                            <span style="font-size:10px;" x-text="sortIndicator('codigo')"></span>
                         </div>
                     </th>
 
-                    <th class="p-2">Unidad</th>
-                    <th class="p-2">Cant.</th>
-                    <th class="p-2">Costo</th>
-                    <th class="p-2">Desc.</th>
-                    <th class="p-2 text-right">Subtotal</th>
-                    <th class="p-2">IVA %</th>
+                    <th class="col-unidad">Unidad</th>
+                    <th class="col-num">Cant.</th>
+                    <th class="col-num">Costo</th>
+                    <th class="col-num">Desc.</th>
+                    <th class="col-subtotal" style="text-align:right;">Subtotal</th>
+                    <th class="col-iva">IVA %</th>
+                    <th class="col-total" style="text-align:right;">Total</th>
 
-                    <th class="p-2 text-right">Total</th>
-                    <th class="p-2 min-w-[28rem] cursor-pointer select-none" @click="toggleSort('descripcion')">
-                        <div class="inline-flex items-center gap-1">
+                    <th class="col-desc" @click="toggleSort('descripcion')" style="cursor:pointer; user-select:none;">
+                        <div style="display:inline-flex; align-items:center; gap:6px;">
                             <span>Descripción</span>
-                            <span class="text-[10px]" x-text="sortIndicator('descripcion')"></span>
+                            <span style="font-size:10px;" x-text="sortIndicator('descripcion')"></span>
                         </div>
                     </th>
                 </tr>
             </thead>
-            <tbody>
-                <template x-if="rows.length === 0">
-                    <tr>
-                        <td colspan="12" class="p-4 text-center text-gray-500">Sin productos</td>
-                    </tr>
-                </template>
 
+            <tbody>
+                <!-- tu x-for igual -->
                 <template x-for="row in displayedRows" :key="row._key">
-                    <tr class="border-t border-gray-200 dark:border-gray-700 align-top">
-                        <td class="p-1 text-center">
-                            <button type="button" class="text-danger-600"
+                    <tr>
+                        <td class="col-x" style="text-align:center;">
+                            <button type="button" style="color:#dc2626;"
                                 @click.stop.prevent="removeRowByKey(row._key)">✕</button>
                         </td>
 
-                        <td class="p-1">
-                            <select class="fi-select w-40" :key="`bodega-${row._key}-${bodegas.length}`"
-                                :value="String(row.id_bodega ?? '')" @focus="ensureBodegasLoaded()"
-                                @click="ensureBodegasLoaded()"
-                                @change="
-                                    row.id_bodega = String($event.target.value || '');
-                                    onBodegaChange(row);
-                                ">
+                        <td class="col-bodega">
+                            <select :key="`bodega-${row._key}-${bodegas.length}`" :value="String(row.id_bodega ?? '')"
+                                @focus="ensureBodegasLoaded()" @click="ensureBodegasLoaded()"
+                                @change="row.id_bodega = String($event.target.value || ''); onBodegaChange(row);">
                                 <option value="">Seleccione</option>
-
                                 <template x-for="b in bodegas" :key="b.id">
                                     <option :value="String(b.id)" :selected="sameBodegaId(b.id, row.id_bodega)"
-                                        x-text="b.nombre">
-                                    </option>
+                                        x-text="b.nombre"></option>
                                 </template>
                             </select>
-
                         </td>
 
-                        <td class="p-1">
-                            <input class="fi-input w-28 cursor-pointer" placeholder="Seleccionar producto..."
-                                x-model="row.producto_filtro" readonly @click="openProductoModal(row)" />
+                        <td class="col-producto">
+                            <input placeholder="Seleccionar producto..." x-model="row.producto_filtro" readonly
+                                @click="openProductoModal(row)" />
                         </td>
 
-                        <td class="p-1">
-                            <input class="fi-input w-28" :value="codigoItem(row)" readonly>
+                        <td class="col-codigo oc-ellipsis">
+                            <input :value="codigoItem(row)" readonly />
                         </td>
 
-                        <td class="p-1"><input class="fi-input w-20" x-model="row.unidad" readonly></td>
+                        <td class="col-unidad"><input x-model="row.unidad" readonly /></td>
 
-                        <td class="p-1"><input type="number" step="0.000001" class="fi-input w-20"
-                                x-model="row.cantidad" @input="sync()"></td>
-                        <td class="p-1"><input type="number" step="0.000001" class="fi-input w-20"
-                                x-model="row.costo" @input="sync()"></td>
-                        <td class="p-1"><input type="number" step="0.000001" class="fi-input w-20"
-                                x-model="row.descuento" @input="sync()"></td>
+                        <td class="col-num"><input type="number" step="0.000001" x-model="row.cantidad"
+                                @input="sync()"></td>
+                        <td class="col-num"><input type="number" step="0.000001" x-model="row.costo" @input="sync()">
+                        </td>
+                        <td class="col-num"><input type="number" step="0.000001" x-model="row.descuento"
+                                @input="sync()"></td>
 
+                        <td class="col-subtotal" style="text-align:right;" x-text="money4(lineSubtotal(row))"></td>
 
-                        <td class="p-1 text-right" x-text="money4(lineSubtotal(row))"></td>
-                        <td class="p-1">
-                            <select class="fi-select w-20" x-model="row.impuesto" @change="sync()">
+                        <td class="col-iva">
+                            <select x-model="row.impuesto" @change="sync()">
                                 <option value="0">0%</option>
                                 <option value="5">5%</option>
                                 <option value="8">8%</option>
@@ -97,16 +193,19 @@
                                 <option value="18">18%</option>
                             </select>
                         </td>
-                        <td class="p-1 text-right font-semibold" x-text="money4(lineTotal(row))"></td>
-                        <td class="p-1">
-                            <input class="fi-input w-64" :value="descripcionColumna(row)" readonly>
 
+                        <td class="col-total" style="text-align:right; font-weight:700;"
+                            x-text="money4(lineTotal(row))"></td>
+
+                        <td class="col-desc oc-ellipsis">
+                            <input :value="descripcionColumna(row)" readonly />
                         </td>
                     </tr>
                 </template>
             </tbody>
         </table>
     </div>
+
 
     <div class="flex justify-start">
         <button type="button" class="fi-btn fi-btn-size-sm fi-btn-color-primary font-bold" @click="addRow()">+
