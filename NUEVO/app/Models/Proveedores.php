@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Proveedores extends Model
 {
@@ -32,12 +33,18 @@ class Proveedores extends Model
         'telefono',
         'direcccion',
         'correo',
+        'uafe_estado',
+        'uafe_observacion',
+        'uafe_documento_path',
+        'uafe_fecha_validacion',
         'anulada',
     ];
 
     protected $casts = [
         'anulada' => 'boolean',
+        'uafe_fecha_validacion' => 'datetime',
     ];
+
     public function lineasNegocio()
     {
         return $this->belongsToMany(LineaNegocio::class, 'proveedor_linea_negocios', 'proveedor_id', 'linea_negocio_id');
@@ -47,5 +54,10 @@ class Proveedores extends Model
     public function empresa()
     {
         return $this->belongsTo(Empresa::class, 'id_empresa');
+    }
+
+    public function uafeHistoriales(): HasMany
+    {
+        return $this->hasMany(ProveedorUafeHistorial::class, 'proveedor_id');
     }
 }
