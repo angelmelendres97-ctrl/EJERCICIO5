@@ -313,27 +313,12 @@ class CreateOrdenCompra extends CreateRecord
             $this->data['detalles'] = $mergedItems;
 
             // Force recalculation of totals
-            $subtotalGeneral = 0;
-            $descuentoGeneral = 0;
-            $impuestoGeneral = 0;
+            $resumen = OrdenCompraResource::buildResumenTotales($this->data['detalles'] ?? []);
 
-            foreach ($this->data['detalles'] as $detalle) {
-                $cantidad = floatval($detalle['cantidad'] ?? 0);
-                $costo = floatval($detalle['costo'] ?? 0);
-                $descuento = floatval($detalle['descuento'] ?? 0);
-                $porcentajeIva = floatval($detalle['impuesto'] ?? 0);
-                $subtotalItem = $cantidad * $costo;
-                $impuestoGeneral += $subtotalItem * ($porcentajeIva / 100);
-                $subtotalGeneral += $subtotalItem;
-                $descuentoGeneral += $descuento;
-            }
-
-            $totalGeneral = ($subtotalGeneral - $descuentoGeneral) + $impuestoGeneral;
-
-            $this->data['subtotal'] = number_format($subtotalGeneral, 2, '.', '');
-            $this->data['total_descuento'] = number_format($descuentoGeneral, 2, '.', '');
-            $this->data['total_impuesto'] = number_format($impuestoGeneral, 2, '.', '');
-            $this->data['total'] = number_format($totalGeneral, 2, '.', '');
+            $this->data['subtotal'] = number_format($resumen['subtotalGeneral'], 2, '.', '');
+            $this->data['total_descuento'] = number_format($resumen['descuentoGeneral'], 2, '.', '');
+            $this->data['total_impuesto'] = number_format($resumen['ivaGeneral'], 2, '.', '');
+            $this->data['total'] = number_format($resumen['totalGeneral'], 2, '.', '');
 
             $this->form->fill($this->data);
             $this->dispatch('oc-detalles-sync', detalles: $this->data['detalles']);

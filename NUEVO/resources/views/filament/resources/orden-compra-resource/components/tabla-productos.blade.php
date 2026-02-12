@@ -588,42 +588,66 @@
                 this.livewire.set('data.resumen_totales', this.summary, false);
             },
             sync(immediate = false) {
-                const basePorIva = {},
-                    baseNetaPorIva = {},
-                    ivaPorIva = {};
-                let subtotal = 0,
-                    descuento = 0,
-                    impuesto = 0;
+                const basePorIva = {};
+                const baseNetaPorIva = {};
+                const ivaPorIva = {};
+
+                let subtotal = 0;
+                let descuento = 0;
+
+                const round2 = (x) => Math.round((this.n(x) + Number.EPSILON) * 100) / 100;
+
                 for (const r of this.rows) {
                     const rate = this.n(r.impuesto);
                     const k = String(rate);
-                    const base = this.lineSubtotal(r);
+
+                    const base = this.lineSubtotal(r); // alta precisión
                     const desc = this.n(r.descuento);
-                    const net = Math.max(0, base - desc);
-                    const iva = net * (rate / 100);
+
+                    const net = Math.max(0, base - desc); // neto real
+                    const net2 = round2(net); // ✅ neto por línea a 2 decimales
+                    const iva2 = round2(net2 * (rate / 100)); // ✅ IVA por línea a 2 decimales
+
                     subtotal += base;
                     descuento += desc;
-                    impuesto += iva;
+
                     basePorIva[k] = (basePorIva[k] || 0) + base;
-                    baseNetaPorIva[k] = (baseNetaPorIva[k] || 0) + net;
-                    ivaPorIva[k] = (ivaPorIva[k] || 0) + iva;
+                    baseNetaPorIva[k] = round2((baseNetaPorIva[k] || 0) + net2);
+                    ivaPorIva[k] = round2((ivaPorIva[k] || 0) + iva2);
                 }
-                const present = Object.keys(basePorIva).filter(k => Math.round((basePorIva[k] || 0) * 1e6) / 1e6 >
-                    0).map(Number);
+
+                subtotal = round2(subtotal);
+                descuento = round2(descuento);
+
+                // ✅ total IVA = suma de IVA por tarifa (ya redondeados por línea)
+                let impuesto = 0;
+                for (const k of Object.keys(ivaPorIva)) {
+                    impuesto = round2(impuesto + this.n(ivaPorIva[k] || 0));
+                }
+
+                const present = Object.keys(basePorIva)
+                    .filter(k => (Math.round((basePorIva[k] || 0) * 1e6) / 1e6) > 0)
+                    .map(Number);
+
                 const preferred = [15, 0, 5, 8, 18];
-                const tarifas = [...preferred.filter(x => present.includes(x)), ...present.filter(x => !preferred
-                    .includes(x)).sort((a, b) => a - b)];
+                const tarifas = [
+                    ...preferred.filter(x => present.includes(x)),
+                    ...present.filter(x => !preferred.includes(x)).sort((a, b) => a - b),
+                ];
+
                 this.summary = {
                     subtotal,
                     descuento,
                     impuesto,
-                    total: subtotal - descuento + impuesto,
+                    total: round2(subtotal - descuento + impuesto),
                     basePorIva,
                     baseNetaPorIva,
                     ivaPorIva,
-                    tarifas
+                    tarifas,
                 };
 
+                // OJO: aquí yo NO te cambio la lógica de valor_impuesto a 6 decimales
+                // porque tus totales por línea (4 decimales) dependen de ese cálculo fino.
                 const payload = this.rows.map(({
                     _key,
                     producto_filtro,
@@ -634,7 +658,7 @@
                         ...r,
                         id_bodega: r.id_bodega,
                         bodega: r.bodega || String(r.id_bodega || ''),
-                        valor_impuesto: (base * (this.n(r.impuesto) / 100)).toFixed(6)
+                        valor_impuesto: (base * (this.n(r.impuesto) / 100)).toFixed(6),
                     };
                 });
 
@@ -649,6 +673,7 @@
                     this.persistState(payload, descuento, impuesto);
                 }, 40);
             }
+
         }
     }
 </script>

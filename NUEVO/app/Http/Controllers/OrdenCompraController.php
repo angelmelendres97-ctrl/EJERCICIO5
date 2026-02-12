@@ -74,11 +74,24 @@ class OrdenCompraController extends Controller
             }
         }
 
+
+        $resumenTotales = OrdenCompraResource::buildResumenTotales(
+            $ordenCompra->detalles
+                ->map(fn($detalle) => [
+                    'cantidad' => (float) ($detalle->cantidad ?? 0),
+                    'costo' => (float) ($detalle->costo ?? 0),
+                    'descuento' => (float) ($detalle->descuento ?? 0),
+                    'impuesto' => (float) ($detalle->impuesto ?? 0),
+                ])
+                ->all()
+        );
+
         // The view 'pdfs.orden_compra' will be created in the next step.
         $pdf = Pdf::loadView('pdfs.orden_compra', [
             'ordenCompra' => $ordenCompra,
             'nombreEmpresaTitulo' => $nombreEmpresaTitulo,
             'productoNombres' => $productoNombres,
+            'resumenTotales' => $resumenTotales,
         ]);
 
         // Returns the PDF as a download.
