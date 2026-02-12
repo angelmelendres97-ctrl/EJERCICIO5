@@ -3,11 +3,13 @@
 namespace App\Filament\Resources\ProveedorResource\Pages;
 
 use App\Filament\Resources\ProveedorResource;
+use App\Services\ProveedorSyncService;
+use App\Services\UafeService;
 use Filament\Actions;
+use Filament\Notifications\Notification;
 use Filament\Resources\Pages\EditRecord;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
-use App\Services\ProveedorSyncService; // <-- Nuevo Import
 
 class EditProveedor extends EditRecord
 {
@@ -24,14 +26,25 @@ class EditProveedor extends EditRecord
     protected function handleRecordUpdate(Model $record, array $data): Model
     {
         return DB::transaction(function () use ($record, $data) {
-            // 1. Actualizar el registro local
             $record->update($data);
 
-            // 2. Sincronizar datos relacionados (lineasNegocio)
             $lineasNegocioIds = $this->data['lineasNegocio'] ?? [];
             $record->lineasNegocio()->sync($lineasNegocioIds);
 
-            ProveedorSyncService::sincronizar($record, $this->data);
+            app(UafeService::class)->gestionarEstadoYDocumentos($record, $this->data);
+
+            try {
+                ProveedorSyncService::sincronizar($record, $this->data);
+                $record->update(['uafe_sync_pendiente' => false]);
+            } catch (\Throwable $e) {
+                $record->update(['uafe_sync_pendiente' => true]);
+
+                Notification::make()
+                    ->title('Cambios guardados localmente. SAE quedó pendiente de sincronizar.')
+                    ->body($e->getMessage())
+                    ->warning()
+                    ->send();
+            }
 
             return $record;
         });
