@@ -16,7 +16,7 @@ class UafeSolicitudDocumentosMail extends Mailable
         public Proveedores $proveedor,
         public string $subjectLine,
         public string $body,
-        public array $attachments = [],
+        public array $attachmentPaths = [], // ✅ RENOMBRADO
     ) {}
 
     public function build(): static
@@ -27,7 +27,7 @@ class UafeSolicitudDocumentosMail extends Mailable
                 'body' => $this->body,
             ]);
 
-        foreach ($this->attachments as $attachmentPath) {
+        foreach ($this->attachmentPaths as $attachmentPath) {
             if ($attachmentPath && Storage::disk('public')->exists($attachmentPath)) {
                 $mail->attachFromStorageDisk('public', $attachmentPath);
             }
