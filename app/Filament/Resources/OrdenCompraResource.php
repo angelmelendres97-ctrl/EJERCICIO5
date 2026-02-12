@@ -35,6 +35,7 @@ use Filament\Actions\StaticAction;
 use Illuminate\Database\Eloquent\Model; // ESTA LÍNEA ES NECESARIA
 use Filament\Notifications\Notification;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\HtmlString;
 
 class OrdenCompraResource extends Resource
 {
@@ -690,6 +691,9 @@ class OrdenCompraResource extends Resource
                         Forms\Components\Repeater::make('detalles')
                             ->schema([
                                 Grid::make(14)
+                                    ->extraAttributes([
+                                        'data-detalle-row' => 'true',
+                                    ])
                                     ->schema([
                                         Forms\Components\Hidden::make('es_auxiliar'),
                                         Forms\Components\Hidden::make('es_servicio'),
@@ -962,18 +966,20 @@ class OrdenCompraResource extends Resource
                                         Forms\Components\TextInput::make('cantidad')
                                             ->numeric()
                                             ->required()
-                                            ->live(debounce: 300)
                                             ->default(1)
                                             ->helperText(fn(Get $get) => filled($get('unidad')) ? 'Unidad: ' . $get('unidad') : null)
+                                            ->extraInputAttributes([
+                                                'data-detalle-field' => 'cantidad',
+                                            ])
                                             ->columnSpan(['default' => 12, 'lg' => 1]),
 
                                         Forms\Components\TextInput::make('costo')
                                             ->label('Costo')
                                             ->required()
                                             ->prefix('$')
-                                            ->live(debounce: 1200)
                                             ->extraInputAttributes([
                                                 'inputmode' => 'decimal',
+                                                'data-detalle-field' => 'costo',
                                                 'oninput' => "let v=this.value
         .replace(/[^0-9.]/g,'')          // solo números y punto
         .replace(/(\\..*)\\./g,'$1');    // solo 1 punto
@@ -990,7 +996,6 @@ class OrdenCompraResource extends Resource
                                             ->rule('regex:/^\d+(\.\d{0,6})?$/')
                                             ->rule('regex:/^\d+(\.\d{0,6})?$/') // valida backend
                                             ->dehydrateStateUsing(fn($state) => $state === '' || $state === null ? 0 : (float) $state)
-                                            ->afterStateUpdated(fn(Get $get, Set $set) => self::syncTotales($get, $set))
                                             ->columnSpan(['default' => 12, 'lg' => 2]),
 
                                         Forms\Components\TextInput::make('descuento')
@@ -998,9 +1003,9 @@ class OrdenCompraResource extends Resource
                                             ->required()
                                             ->default(0)
                                             ->prefix('$')
-                                            ->live(debounce: 600)
                                             ->extraInputAttributes([
                                                 'inputmode' => 'decimal',
+                                                'data-detalle-field' => 'descuento',
                                                 'oninput' => "let v=this.value
         .replace(/[^0-9.]/g,'')          // solo números y punto
         .replace(/(\\..*)\\./g,'$1');    // solo 1 punto
@@ -1017,7 +1022,6 @@ class OrdenCompraResource extends Resource
                                             ->rule('regex:/^\d+(\.\d{0,6})?$/')
                                             ->rule('regex:/^\d+(\.\d{0,6})?$/')
                                             ->dehydrateStateUsing(fn($state) => $state === '' || $state === null ? 0 : (float) $state)
-                                            ->afterStateUpdated(fn(Get $get, Set $set) => self::syncTotales($get, $set))
                                             ->columnSpan(['default' => 12, 'lg' => 2]),
                                         Forms\Components\Placeholder::make('subtotal_linea')
                                             ->label('Subtotal')
@@ -1026,14 +1030,18 @@ class OrdenCompraResource extends Resource
                                                 $costo = floatval($get('costo'));
                                                 $subtotal = $cantidad * $costo;
 
-                                                return '$' . number_format($subtotal, 4, '.', '');
+                                                return new HtmlString(
+                                                    '<span data-subtotal-linea-value>$' . number_format($subtotal, 4, '.', '') . '</span>'
+                                                );
                                             })
                                             ->columnSpan(['default' => 12, 'lg' => 1]),
 
                                         Forms\Components\Select::make('impuesto')
                                             ->options(['0' => '0%', '5' => '5%', '8' => '8%', '15' => '15%', '18' => '18%'])
                                             ->required()
-                                            ->live()
+                                            ->extraAttributes([
+                                                'data-detalle-field' => 'impuesto',
+                                            ])
                                             ->columnSpan(['default' => 12, 'lg' => 1]),
 
                                         /*    Forms\Components\Placeholder::make('valor_iva')
@@ -1065,7 +1073,9 @@ class OrdenCompraResource extends Resource
                                                 $valorIva = $subtotal * ($iva / 100);
                                                 $total = ($subtotal + $valorIva) - $descuento;
 
-                                                return '$' . number_format($total, 4, '.', '');
+                                                return new HtmlString(
+                                                    '<span data-total-linea-value>$' . number_format($total, 4, '.', '') . '</span>'
+                                                );
                                             })
                                             ->columnSpan(['default' => 12, 'lg' => 2]),
                                     ]),
@@ -1073,15 +1083,24 @@ class OrdenCompraResource extends Resource
                             ->relationship()
                             ->columns(1)
                             ->addActionLabel('Agregar Producto')
-                            ->afterStateUpdated(fn(Get $get, Set $set) => self::syncTotales($get, $set))
-                            ->live(),
+                            ->extraAttributes([
+                                'data-detalles-repeater' => 'true',
+                            ]),
                     ]),
 
                 // Hidden fields for totals
-                Forms\Components\Hidden::make('subtotal')->default(0),
-                Forms\Components\Hidden::make('total_descuento')->default(0),
-                Forms\Components\Hidden::make('total_impuesto')->default(0),
-                Forms\Components\Hidden::make('total')->default(0),
+                Forms\Components\Hidden::make('subtotal')
+                    ->default(0)
+                    ->extraAttributes(['data-total-field' => 'subtotal']),
+                Forms\Components\Hidden::make('total_descuento')
+                    ->default(0)
+                    ->extraAttributes(['data-total-field' => 'total_descuento']),
+                Forms\Components\Hidden::make('total_impuesto')
+                    ->default(0)
+                    ->extraAttributes(['data-total-field' => 'total_impuesto']),
+                Forms\Components\Hidden::make('total')
+                    ->default(0)
+                    ->extraAttributes(['data-total-field' => 'total']),
                 Forms\Components\Hidden::make('resumen_totales')
                     ->dehydrated(false),
 
@@ -1092,8 +1111,12 @@ class OrdenCompraResource extends Resource
                             ->viewData(fn(Get $get) => $get('resumen_totales') ?? self::buildResumenTotales($get('detalles') ?? [])),
                     ])->columns(1),
 
-            ])->live()->extraAttributes([
-                'onkeydown' => "if (event.key === 'Enter') { event.preventDefault(); return false; }"
+                View::make('detalles_totales_script')
+                    ->view('filament.resources.orden-compra-resource.components.detalles-totales-script'),
+
+            ])->extraAttributes([
+                'onkeydown' => "if (event.key === 'Enter') { event.preventDefault(); return false; }",
+                'data-orden-compra-form' => 'true',
             ]);
     }
 
