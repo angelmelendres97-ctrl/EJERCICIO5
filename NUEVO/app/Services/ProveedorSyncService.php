@@ -14,6 +14,15 @@ use App\Filament\Resources\ProveedorResource;
 
 class ProveedorSyncService
 {
+    private static function mapUafeEstadoToSaeCalificacion(?string $uafeEstado): string
+    {
+        return match ($uafeEstado) {
+            ProveedorResource::UAFE_ESTADO_APROBADO => 'A',
+            ProveedorResource::UAFE_ESTADO_APROBADO_PARCIAL => 'P',
+            default => 'N',
+        };
+    }
+
     /**
      * Sincroniza los datos del proveedor con las tablas externas (saeclpv, saetlcp, saeemai, saedire)
      * en cada una de las bases de datos PostgreSQL seleccionadas.
@@ -61,6 +70,8 @@ class ProveedorSyncService
         $correo = $data['correo'];
 
         $aplica_retencion_sn = $data['aplica_retencion_sn'] ? 'S' : 'N';
+        $uafeEstado = $data['uafe_estado'] ?? ProveedorResource::UAFE_ESTADO_NO_APROBADO;
+        $calificacionUafe = self::mapUafeEstadoToSaeCalificacion($uafeEstado);
         $fecha_server = date('Y-m-d');
 
 
@@ -147,7 +158,7 @@ class ProveedorSyncService
                     'clpv_fec_has' => $fecha_server,
                     'clpv_fec_reno' => $fecha_server,
                     'clpv_nom_come' => $nombre_comercial,
-                    'clpv_cal_clpv' => 'A',
+                    'clpv_cal_clpv' => $calificacionUafe,
                     'clpv_est_mon' => 'N',
                     'clpv_lim_cred' => $limite_credito,
                     'clpv_pro_pago' => $dias_pago,

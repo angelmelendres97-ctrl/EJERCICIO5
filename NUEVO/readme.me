@@ -1,0 +1,180 @@
+# Aprobaciones UAFE en módulo Proveedores
+
+Este documento explica **cómo funciona** la nueva sección de Aprobaciones UAFE, **qué tablas usa/modifica**, cómo impacta en tablas SAE (como `saeclpv`), y cómo habilitar el envío de correos.
+
+## 1) Flujo funcional
+
+### 1.1 Registro inicial de proveedor
+Cuando se crea un proveedor desde Filament (ficha principal o “Nuevo”):
+
+1. Se crea el proveedor local en `proveedores`.
+2. El proveedor inicia en estado UAFE por defecto: `NO_APROBADO`.
+3. Se registra historial de evento inicial en `proveedor_uafe_historials` (`REGISTRO_INICIAL`).
+4. Si existe correo del proveedor, se envía correo automático solicitando documentación UAFE.
+5. Se registra historial de envío en `proveedor_uafe_historials` (`ENVIO_CORREO`).
+6. Se sincroniza el proveedor con SAE (tabla `saeclpv` y tablas relacionadas).
+
+### 1.2 Revisión administrativa
+En la sección **Aprobaciones UAFE** del proveedor el administrador puede:
+
+- cambiar estado a:
+  - `APROBADO`
+  - `APROBADO_PARCIAL`
+  - `NO_APROBADO`
+- adjuntar constancia documental (`uafe_documento_path`),
+- registrar observación (`uafe_observacion`),
+- registrar fecha de validación (`uafe_fecha_validacion`).
+
+Si el estado cambia, se registra evento `CAMBIO_ESTADO` en historial.
+
+### 1.3 Reenvío de solicitud de documentación
+En listado de proveedores existe acción **Reenviar solicitud UAFE**:
+
+- disponible para proveedores `NO_APROBADO` o `APROBADO_PARCIAL`,
+- envía correo solicitando documentación pendiente,
+- registra historial `REENVIO_CORREO` con fecha, usuario y destinatario.
+
+---
+
+## 2) Tablas locales involucradas
+
+## 2.1 `proveedores` (tabla existente, modificada)
+Se agregan los campos:
+
+- `uafe_estado` (varchar, default `NO_APROBADO`)
+- `uafe_observacion` (text nullable)
+- `uafe_documento_path` (varchar nullable)
+- `uafe_fecha_validacion` (timestamp nullable)
+
+Migración: `2026_02_12_120000_add_uafe_fields_to_proveedores_table.php`.
+
+## 2.2 `proveedor_uafe_historials` (tabla nueva)
+Se crea para trazabilidad de validación UAFE:
+
+- `proveedor_id`
+- `accion` (`REGISTRO_INICIAL`, `ENVIO_CORREO`, `REENVIO_CORREO`, `CAMBIO_ESTADO`)
+- `estado_anterior`
+- `estado_nuevo`
+- `detalle`
+- `correo_destino`
+- `enviado_en`
+- `usuario_id`
+- timestamps
+
+Migración: `2026_02_12_120100_create_proveedor_uafe_historials_table.php`.
+
+---
+
+## 3) Tablas SAE involucradas (sincronización)
+
+La sincronización se realiza en `ProveedorSyncService`.
+
+## 3.1 Tabla principal SAE
+- `saeclpv` (cabecera de cliente/proveedor)
+
+Campos relevantes sincronizados:
+- identificación, nombres, grupo, zona, flujo de caja,
+- forma de pago, tipo proveedor, destino de pago, país,
+- retención, límite de crédito, días de pago,
+- estado/calificación.
+
+### Mapeo UAFE hacia SAE (`clpv_cal_clpv`)
+Para mantener coherencia con UAFE, se mapea:
+
+- `APROBADO` -> `A`
+- `APROBADO_PARCIAL` -> `P`
+- `NO_APROBADO` -> `N`
+
+> Nota: este mapeo utiliza el campo `clpv_cal_clpv` como referencia de calificación en SAE.
+
+## 3.2 Tablas SAE secundarias
+También se sincronizan:
+- `saetlcp` (teléfonos)
+- `saeemai` (correos)
+- `saedire` (direcciones)
+
+Y se consultan catálogos de referencia:
+- `saegrpv`, `saezona`, `saecact`, `saetprov`, `saefpagop`, `saetpago`, `saepaisp`, `comercial.tipo_iden_clpv`, `saesucu`.
+
+---
+
+## 4) ¿Cómo se envían los correos?
+
+Actualmente los correos se envían con `Mail::raw(...)` en dos momentos:
+
+1. al crear proveedor (envío inicial),
+2. al usar acción “Reenviar solicitud UAFE”.
+
+Para que funcione en tu ambiente, configurar `.env`.
+
+### 4.1 Ejemplo SMTP (Gmail / Office / relay)
+
+```env
+MAIL_MAILER=smtp
+MAIL_HOST=smtp.tudominio.com
+MAIL_PORT=587
+MAIL_USERNAME=usuario
+MAIL_PASSWORD=clave
+MAIL_ENCRYPTION=tls
+MAIL_FROM_ADDRESS=no-reply@tudominio.com
+MAIL_FROM_NAME="Compras"
+```
+
+Luego limpiar caché/config:
+
+```bash
+php artisan config:clear
+php artisan cache:clear
+```
+
+### 4.2 Modo pruebas sin enviar reales
+
+```env
+MAIL_MAILER=log
+```
+
+Con eso los correos quedan registrados en logs y no salen por SMTP real.
+
+---
+
+## 5) Cómo actualizar tablas SAE (`saeclpv`) en operación
+
+Cada vez que se crea/edita proveedor en Filament:
+
+1. Se dispara `ProveedorSyncService::sincronizar(...)`.
+2. El servicio identifica la(s) empresa(s) SAE seleccionadas.
+3. Busca proveedor en `saeclpv` por empresa + RUC + tipo `PV`.
+4. Si no existe, inserta; si existe, actualiza.
+5. Sincroniza teléfono/correo/dirección en tablas secundarias.
+6. Usa transacciones por conexión SAE para consistencia.
+
+---
+
+## 6) Mejoras recomendadas
+
+1. **Plantillas de correo**
+   - Migrar de `Mail::raw` a Mailable/plantillas Blade.
+2. **Cola de correos**
+   - Enviar en background con queues para no bloquear UI.
+3. **Adjuntos en solicitud**
+   - Incluir checklist UAFE y links de carga en correo.
+4. **Historial visible en UI**
+   - Agregar relation manager para auditar eventos UAFE por proveedor.
+5. **Reglas de negocio operativas**
+   - Bloquear uso en OC cuando estado `NO_APROBADO`.
+   - Permitir con advertencia cuando `APROBADO_PARCIAL`.
+6. **Notificaciones internas**
+   - Avisar a administradores cuando cambia estado/documentación.
+7. **Validaciones extra**
+   - Caducidad de documentos, recordatorios automáticos por vencimiento.
+8. **Trazabilidad de archivos**
+   - versionado de constancias y hash de integridad documental.
+
+---
+
+## 7) Resumen técnico rápido
+
+- Se añadió sección **Aprobaciones UAFE** al recurso de proveedores en Filament.
+- Se creó historial de seguimiento UAFE en BD.
+- Se implementó envío inicial y reenvío de correos de solicitud documental.
+- Se alineó la sincronización SAE en `saeclpv` para reflejar el estado UAFE mediante calificación.
