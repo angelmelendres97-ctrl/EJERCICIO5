@@ -81,63 +81,61 @@ class OrdenCompraResource extends Resource
 
     public static function buildResumenTotales(array $detalles): array
     {
+        $round2 = fn($x) => round((float) $x + 1e-12, 2);
+
+        $subtotalGeneral = 0.0;
+        $descuentoGeneral = 0.0;
+        $ivaGeneral = 0.0;
+
         $basePorIva = [];
-        $descPorIva = [];
-
-        foreach ($detalles as $detalle) {
-            $rate = (float) ($detalle['impuesto'] ?? 0);
-            $rateKey = (string) $rate;
-
-            $cantidad = (float) ($detalle['cantidad'] ?? 0);
-            $costo = (float) ($detalle['costo'] ?? 0);
-            $descuento = (float) ($detalle['descuento'] ?? 0);
-
-            $base = $cantidad * $costo;
-
-            $basePorIva[$rateKey] = ($basePorIva[$rateKey] ?? 0) + $base;
-            $descPorIva[$rateKey] = ($descPorIva[$rateKey] ?? 0) + $descuento;
-
-        }
-
-        $tarifas = collect($basePorIva)
-            ->filter(fn($base) => round((float) $base, 6) > 0)
-            ->keys()
-            ->map(fn($rate) => (float) $rate)
-            ->values();
-
-        $ordenPreferido = collect([15, 0, 5, 8, 18]);
-        $tarifas = $ordenPreferido
-            ->intersect($tarifas)
-            ->merge($tarifas->diff($ordenPreferido)->sort())
-            ->values();
-
         $baseNetaPorIva = [];
         $ivaPorIva = [];
-        foreach ($basePorIva as $rateKey => $baseBruta) {
-            $baseNeta = max(0, (float) $baseBruta - (float) ($descPorIva[$rateKey] ?? 0));
-            $baseNetaRedondeada = round($baseNeta, 2);
-            $rate = (float) $rateKey;
 
-            $baseNetaPorIva[$rateKey] = $baseNetaRedondeada;
-            $ivaPorIva[$rateKey] = round($baseNetaRedondeada * ($rate / 100), 2);
+        foreach ($detalles as $d) {
+            $cant = (float) ($d['cantidad'] ?? 0);
+            $costo = (float) ($d['costo'] ?? 0);
+            $desc = (float) ($d['descuento'] ?? 0);
+            $rate = (float) ($d['impuesto'] ?? 0);
+
+            $base = $cant * $costo;
+            $net = max(0, $base - $desc);
+
+            $net2 = $round2($net);                 // ✅ neto por línea a 2
+            $iva2 = $round2($net2 * ($rate / 100)); // ✅ IVA por línea a 2
+
+            $k = (string) $rate;
+
+            $subtotalGeneral += $base;
+            $descuentoGeneral += $desc;
+
+            $basePorIva[$k] = ($basePorIva[$k] ?? 0) + $base;
+            $baseNetaPorIva[$k] = $round2(($baseNetaPorIva[$k] ?? 0) + $net2);
+            $ivaPorIva[$k] = $round2(($ivaPorIva[$k] ?? 0) + $iva2);
         }
 
-        $subtotalGeneral = round(array_sum($basePorIva), 2);
-        $descuentoGeneral = round(array_sum($descPorIva), 2);
-        $ivaGeneral = round(array_sum($ivaPorIva), 2);
-        $totalGeneral = round($subtotalGeneral - $descuentoGeneral + $ivaGeneral, 2);
+        $subtotalGeneral = $round2($subtotalGeneral);
+        $descuentoGeneral = $round2($descuentoGeneral);
 
-        return [
-            'basePorIva' => $basePorIva,
-            'baseNetaPorIva' => $baseNetaPorIva,
-            'ivaPorIva' => $ivaPorIva,
-            'tarifas' => $tarifas,
-            'subtotalGeneral' => $subtotalGeneral,
-            'descuentoGeneral' => $descuentoGeneral,
-            'ivaGeneral' => $ivaGeneral,
-            'totalGeneral' => $totalGeneral,
-        ];
+        foreach ($ivaPorIva as $k => $v) {
+            $ivaGeneral = $round2($ivaGeneral + (float) $v);
+        }
+
+        $totalGeneral = $round2($subtotalGeneral - $descuentoGeneral + $ivaGeneral);
+
+        $tarifas = array_keys($basePorIva);
+
+        return compact(
+            'subtotalGeneral',
+            'descuentoGeneral',
+            'ivaGeneral',
+            'totalGeneral',
+            'basePorIva',
+            'baseNetaPorIva',
+            'ivaPorIva',
+            'tarifas'
+        );
     }
+
 
     protected static function syncTotales(Get $get, Set $set): void
     {
