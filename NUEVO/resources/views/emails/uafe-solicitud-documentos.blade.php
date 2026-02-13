@@ -5,6 +5,6 @@
     <title>Solicitud de documentos UAFE</title>
 </head>
 <body>
-    {!! nl2br(e($body)) !!}
+    {!! $body !!}
 </body>
 </html>

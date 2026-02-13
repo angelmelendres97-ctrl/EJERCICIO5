@@ -60,6 +60,38 @@ class ProveedorResource extends Resource
         return $connectionName;
     }
 
+
+    public static function getEstadoSaeProveedor(Proveedores $record): ?string
+    {
+        $connectionName = self::getExternalConnectionName((int) $record->id_empresa);
+
+        if (!$connectionName || empty($record->admg_id_empresa) || empty($record->ruc)) {
+            return null;
+        }
+
+        try {
+            return DB::connection($connectionName)
+                ->table('saeclpv')
+                ->where('clpv_cod_empr', $record->admg_id_empresa)
+                ->where('clpv_clopv_clpv', 'PV')
+                ->where('clpv_ruc_clpv', $record->ruc)
+                ->value('clpv_est_clpv');
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
+
+    public static function getEstadoUafeReal(Proveedores $record): string
+    {
+        $estadoSae = self::getEstadoSaeProveedor($record);
+
+        if ($estadoSae === 'P') {
+            return 'NO_APROBADO';
+        }
+
+        return $record->uafe_estado ?? 'APROBADO_PARCIAL';
+    }
+
     public static function form(Form $form): Form
     {
         return $form->schema(self::getFormSchema());
@@ -693,7 +725,7 @@ class ProveedorResource extends Resource
                             'APROBADO_PARCIAL' => 'Aprobado parcial',
                             'APROBADO' => 'Aprobado',
                         ])
-                        ->default('NO_APROBADO')
+                        ->default('APROBADO_PARCIAL')
                         ->required()
                         ->live()
                         ->afterStateUpdated(function (Set $set, $state): void {
@@ -766,6 +798,12 @@ class ProveedorResource extends Resource
 
                 Tables\Columns\TextColumn::make('uafe_estado')
                     ->label('Estado UAFE')
+                    ->getStateUsing(fn(Proveedores $record): string => self::getEstadoUafeReal($record))
+                    ->formatStateUsing(fn(string $state): string => match ($state) {
+                        'APROBADO' => 'Aprobado',
+                        'APROBADO_PARCIAL' => 'Aprobado parcial',
+                        default => 'No aprobado',
+                    })
                     ->badge()
                     ->color(fn(string $state): string => match ($state) {
                         'APROBADO' => 'success',
@@ -857,7 +895,7 @@ class ProveedorResource extends Resource
                     ->icon('heroicon-o-envelope')
                     ->color('warning')
                     ->requiresConfirmation()
-                    ->visible(fn(Proveedores $record): bool => in_array($record->uafe_estado, ['NO_APROBADO', 'APROBADO_PARCIAL'], true))
+                    ->visible(fn(Proveedores $record): bool => in_array(self::getEstadoUafeReal($record), ['NO_APROBADO', 'APROBADO_PARCIAL'], true))
                     ->action(function (Proveedores $record): void {
                         try {
                             app(UafeService::class)->enviarCorreoSolicitudDocumentos($record);

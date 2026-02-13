@@ -31,9 +31,23 @@ class UafeConfiguracionResource extends Resource
                     Forms\Components\TextInput::make('plantilla_asunto')
                         ->required()
                         ->helperText('Placeholders disponibles: {{proveedor.nombre}}, {{proveedor.ruc}}, {{empresa.nombre}}, {{link_carga_documentos}}'),
-                    Forms\Components\Textarea::make('plantilla_cuerpo')
+                    Forms\Components\RichEditor::make('plantilla_cuerpo')
                         ->required()
-                        ->rows(8),
+                        ->toolbarButtons([
+                            'bold',
+                            'italic',
+                            'underline',
+                            'strike',
+                            'bulletList',
+                            'orderedList',
+                            'h2',
+                            'h3',
+                            'blockquote',
+                            'link',
+                            'redo',
+                            'undo',
+                        ])
+                        ->columnSpanFull(),
                     Forms\Components\FileUpload::make('adjuntos_fijos')
                         ->multiple()
                         ->disk('public')
