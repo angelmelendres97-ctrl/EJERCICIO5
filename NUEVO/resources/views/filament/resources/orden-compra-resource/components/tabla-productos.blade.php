@@ -172,7 +172,13 @@
                             <input :value="codigoItem(row)" readonly />
                         </td>
  --}}
-                        <td class="col-unidad"><input x-model="row.unidad" readonly /></td>
+                        <td class="col-unidad">
+                            <select x-model="row.unidad" @change="sync()">
+                                <template x-for="u in unidadOptions(row)" :key="`unidad-${u.id}`">
+                                    <option :value="u.label" x-text="u.label"></option>
+                                </template>
+                            </select>
+                        </td>
 
                         <td class="col-num"><input type="number" step="0.000001" x-model="row.cantidad"
                                 @input="sync()"></td>
@@ -303,9 +309,11 @@
                 direction: 'asc',
             },
             bodegas: [],
+            unidades: [],
             productosPorFila: {},
             latestSearchToken: {},
             bodegasContext: null,
+            unidadesContext: null,
             syncTimer: null,
             summary: {
                 subtotal: 0,
@@ -330,8 +338,9 @@
 
                 this.applyServerRows(initialRows || []);
 
-                // ✅ Espera a que bodegas carguen y se haga el mapeo
+                // ✅ Espera a que bodegas y unidades carguen y se haga el mapeo
                 await this.loadBodegas(true);
+                await this.loadUnidades(true);
 
                 // ✅ Fuerza un tick para que el DOM replique el valor seleccionado
                 this.$nextTick(() => {
@@ -411,6 +420,13 @@
                 const contextKey = `${ctx.empresa}-${ctx.amdgEmpresa}-${ctx.amdgSucursal}`;
                 if (this.bodegasContext !== contextKey || !this.bodegas.length) {
                     await this.loadBodegas(true);
+                }
+            },
+            async ensureUnidadesLoaded() {
+                const ctx = this.getCurrentContext();
+                const contextKey = `${ctx.empresa}-${ctx.amdgEmpresa}`;
+                if (this.unidadesContext !== contextKey || !this.unidades.length) {
+                    await this.loadUnidades(true);
                 }
             },
             get livewire() {
@@ -531,11 +547,48 @@
                     this.bodegas = [];
                 }
             },
+            async loadUnidades(force = false) {
+                if (!this.livewire) return;
+                if (!force && this.unidades.length) return;
+                try {
+                    const list = await this.livewire.call('fetchUnidades');
+                    this.unidades = Array.isArray(list) ? list : [];
+                    const ctx = this.getCurrentContext();
+                    this.unidadesContext = `${ctx.empresa}-${ctx.amdgEmpresa}`;
+                } catch (_) {
+                    this.unidades = [];
+                }
+
+                this.rows.forEach((row) => this.ensureUnidadValue(row));
+            },
+            unidadOptions(row) {
+                const options = [...(this.unidades || [])];
+                const current = String(row?.unidad ?? '').trim();
+
+                if (current !== '' && !options.some((u) => String(u.label ?? '').trim() === current)) {
+                    options.unshift({
+                        id: `manual-${current}`,
+                        label: current,
+                    });
+                }
+
+                return options;
+            },
+            ensureUnidadValue(row) {
+                if (!row) return;
+
+                const current = String(row.unidad ?? '').trim();
+                if (current !== '') return;
+
+                const first = this.unidadOptions(row)[0];
+                row.unidad = first?.label || 'UN';
+            },
             fillProductoFiltro(row) {
                 row.producto_filtro = row.producto ? `${row.producto} (${row.codigo_producto || ''})`.trim() : '';
             },
             async searchProductos(row) {
                 await this.ensureBodegasLoaded();
+                await this.ensureUnidadesLoaded();
                 if (!this.livewire || !row.id_bodega) {
                     this.productosPorFila[row._key] = [];
                     row.showResultados = true;
@@ -554,6 +607,7 @@
             },
             async openProductoModal(row) {
                 await this.ensureBodegasLoaded();
+                await this.ensureUnidadesLoaded();
                 if (!row.id_bodega) return;
                 const selected = this.bodegas.find(b => this.sameBodegaId(b.id, row.id_bodega));
                 this.productoModal = {
@@ -588,7 +642,8 @@
             async onBodegaChange(row) {
                 row.codigo_producto = '';
                 row.producto = '';
-                row.unidad = 'UN';
+                row.unidad = '';
+                this.ensureUnidadValue(row);
                 row.producto_filtro = '';
                 row.showResultados = false;
                 row.highlightedIndex = -1;
