@@ -823,6 +823,59 @@ class EditOrdenCompra extends EditRecord
         }
     }
 
+
+    public function fetchUnidades(): array
+    {
+        $empresaId = $this->data['id_empresa'] ?? null;
+        $amdgEmpresa = $this->data['amdg_id_empresa'] ?? null;
+
+        if (!$empresaId || !$amdgEmpresa) {
+            return [];
+        }
+
+        $connectionName = OrdenCompraResource::getExternalConnectionName((int) $empresaId);
+        if (!$connectionName) {
+            return [];
+        }
+
+        try {
+            $schema = DB::connection($connectionName)->getSchemaBuilder();
+
+            return DB::connection($connectionName)
+                ->table('saeunid')
+                ->when(
+                    $schema->hasColumn('saeunid', 'unid_cod_empr'),
+                    fn($q) => $q->where('unid_cod_empr', $amdgEmpresa)
+                )
+                ->select([
+                    'unid_cod_unid',
+                    DB::raw('MAX(unid_sigl_unid) as unid_sigl_unid'),
+                    DB::raw('MAX(unid_nom_unid) as unid_nom_unid'),
+                ])
+                ->groupBy('unid_cod_unid')
+                ->orderBy('unid_cod_unid')
+                ->limit(500)
+                ->get()
+                ->map(function ($u) {
+                    $codigo = (string) $u->unid_cod_unid;
+                    $sigla = trim((string) ($u->unid_sigl_unid ?? ''));
+                    $nombre = trim((string) ($u->unid_nom_unid ?? ''));
+                    $valor = $sigla !== '' ? $sigla : ($nombre !== '' ? $nombre : $codigo);
+
+                    return [
+                        'codigo' => $codigo,
+                        'sigla' => $sigla,
+                        'nombre' => $nombre,
+                        'label' => trim($valor . ($nombre !== '' && $nombre !== $valor ? ' - ' . $nombre : '')),
+                    ];
+                })
+                ->values()
+                ->all();
+        } catch (\Throwable $e) {
+            return [];
+        }
+    }
+
     public function searchProductosPorBodega(string $bodegaId, string $term = ''): array
     {
         $empresaId = $this->data['id_empresa'] ?? null;
@@ -869,6 +922,7 @@ class EditOrdenCompra extends EditRecord
                     'prbo_iva_porc',
                     'prbo_cod_unid',
                     'unid_nom_unid',
+                    'unid_sigl_unid',
                 ])
                 ->map(fn($r) => [
                     'codigo' => (string) $r->prod_cod_prod,
@@ -876,7 +930,7 @@ class EditOrdenCompra extends EditRecord
                     'label' => trim(((string) $r->prod_nom_prod) . ' (' . ((string) $r->prod_cod_prod) . ')'),
                     'costo' => (float) ($r->prbo_uco_prod ?? 0),
                     'impuesto' => (float) ($r->prbo_iva_porc ?? 0),
-                    'unidad' => (string) ($r->unid_nom_unid ?? $r->prbo_cod_unid ?? 'UN'),
+                    'unidad' => (string) ($r->unid_sigl_unid ?? $r->unid_nom_unid ?? $r->prbo_cod_unid ?? 'UN'),
                 ])
                 ->all();
         } catch (\Throwable $e) {
