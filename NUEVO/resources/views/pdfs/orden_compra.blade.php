@@ -404,8 +404,7 @@
                             // Asegura números válidos
                             $cantidadImp = (float) ($detalle->cantidad ?? 0);
                             $precioUnitImp = (float) ($detalle->costo ?? 0);
-
-                            // Total calculado: precio unitario * cantidad
+                            // Total de columna en PDF (como se visualiza en la tabla de productos)
                             $totalImp = $cantidadImp * $precioUnitImp;
                         @endphp
 
@@ -456,8 +455,10 @@
             $basePorIva = (array) ($resumenTotales['basePorIva'] ?? []);
             $baseNetaPorIva = (array) ($resumenTotales['baseNetaPorIva'] ?? []);
             $ivaPorIva = (array) ($resumenTotales['ivaPorIva'] ?? []);
+
             $tarifas = collect($resumenTotales['tarifas'] ?? [])->map(fn($rate) => (float) $rate)->values();
 
+            // Usar el mismo resumen calculado desde el detalle (misma lógica de la tabla de productos).
             $subtotalGeneral = (float) ($resumenTotales['subtotalGeneral'] ?? $ordenCompra->subtotal ?? 0);
             $descuentoGeneral = (float) ($resumenTotales['descuentoGeneral'] ?? $ordenCompra->total_descuento ?? 0);
             $ivaGeneral = (float) ($resumenTotales['ivaGeneral'] ?? $ordenCompra->total_impuesto ?? 0);
