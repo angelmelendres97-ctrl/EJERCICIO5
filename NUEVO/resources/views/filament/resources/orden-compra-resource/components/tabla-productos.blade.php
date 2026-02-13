@@ -205,7 +205,7 @@
                         </td>
 
                         <td class="col-total" style="text-align:right; font-weight:700;"
-                            x-text="money4(lineTotal(row))"></td>
+                            x-text="money4(lineTotal2(row))"></td>
 
                         {{--    <td class="col-desc oc-ellipsis">
                             <input :value="descripcionColumna(row)" readonly />
@@ -793,6 +793,24 @@
                 const base = Math.max(0, this.lineSubtotal(r) - this.n(r.descuento));
                 return base + (base * (this.n(r.impuesto) / 100));
             },
+            lineNeto(r) {
+                const base = this.lineSubtotal(r);
+                return Math.max(0, base - this.n(r.descuento));
+            },
+            lineNeto2(r) {
+                const round2 = (x) => Math.round((this.n(x) + Number.EPSILON) * 100) / 100;
+                return round2(this.lineNeto(r));
+            },
+            lineIva2(r) {
+                const round2 = (x) => Math.round((this.n(x) + Number.EPSILON) * 100) / 100;
+                const rate = this.n(r.impuesto) / 100;
+                return round2(this.lineNeto(r) * rate);
+            },
+            lineTotal2(r) {
+                const round2 = (x) => Math.round((this.n(x) + Number.EPSILON) * 100) / 100;
+                return round2(this.lineNeto2(r) + this.lineIva2(r));
+            },
+
             persistState(payload, descuento, impuesto) {
                 if (!this.livewire) return;
 
@@ -819,10 +837,11 @@
 
                     const base = this.lineSubtotal(r); // alta precisión
                     const desc = this.n(r.descuento);
+                    const net = Math.max(0, base - desc); // alta precisión
 
-                    const net = Math.max(0, base - desc); // neto real
-                    const net2 = round2(net); // ✅ neto por línea a 2 decimales
-                    const iva2 = round2(net2 * (rate / 100)); // ✅ IVA por línea a 2 decimales
+                    const net2 = round2(net); // base neta a 2 dec (para “Tarifa”)
+                    const iva2 = round2(net * (rate / 100)); // ✅ IVA por línea a 2 dec (desde neto exacto)
+                    const total2 = round2(net2 + iva2); // ✅ total por línea coherente
 
                     subtotal += base;
                     descuento += desc;
@@ -830,12 +849,15 @@
                     basePorIva[k] = (basePorIva[k] || 0) + base;
                     baseNetaPorIva[k] = round2((baseNetaPorIva[k] || 0) + net2);
                     ivaPorIva[k] = round2((ivaPorIva[k] || 0) + iva2);
+
+                    // (opcional) si quieres guardar por fila coherente:
+                    r._iva2 = iva2;
+                    r._total2 = total2;
                 }
 
                 subtotal = round2(subtotal);
                 descuento = round2(descuento);
 
-                // ✅ total IVA = suma de IVA por tarifa (ya redondeados por línea)
                 let impuesto = 0;
                 for (const k of Object.keys(ivaPorIva)) {
                     impuesto = round2(impuesto + this.n(ivaPorIva[k] || 0));
@@ -855,26 +877,25 @@
                     subtotal,
                     descuento,
                     impuesto,
-                    total: round2(subtotal - descuento + impuesto),
+                    total: round2((subtotal - descuento) + impuesto),
                     basePorIva,
                     baseNetaPorIva,
                     ivaPorIva,
                     tarifas,
                 };
 
-                // OJO: aquí yo NO te cambio la lógica de valor_impuesto a 6 decimales
-                // porque tus totales por línea (4 decimales) dependen de ese cálculo fino.
                 const payload = this.rows.map(({
                     _key,
                     producto_filtro,
                     ...r
                 }) => {
-                    const base = Math.max(0, this.lineSubtotal(r) - this.n(r.descuento));
+                    const net = Math.max(0, this.lineSubtotal(r) - this.n(r.descuento));
+                    const iva2 = round2(net * (this.n(r.impuesto) / 100)); // ✅ mismo IVA resumen
                     return {
                         ...r,
                         id_bodega: r.id_bodega,
                         bodega: r.bodega || String(r.id_bodega || ''),
-                        valor_impuesto: (base * (this.n(r.impuesto) / 100)).toFixed(6),
+                        valor_impuesto: iva2.toFixed(6), // 991.30 -> "991.300000"
                     };
                 });
 

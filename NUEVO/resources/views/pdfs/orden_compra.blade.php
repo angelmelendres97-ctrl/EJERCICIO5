@@ -404,8 +404,7 @@
                             // Asegura números válidos
                             $cantidadImp = (float) ($detalle->cantidad ?? 0);
                             $precioUnitImp = (float) ($detalle->costo ?? 0);
-
-                            // Total calculado: precio unitario * cantidad
+                            // Total de columna en PDF (como se visualiza en la tabla de productos)
                             $totalImp = $cantidadImp * $precioUnitImp;
                         @endphp
 
@@ -456,12 +455,45 @@
             $basePorIva = (array) ($resumenTotales['basePorIva'] ?? []);
             $baseNetaPorIva = (array) ($resumenTotales['baseNetaPorIva'] ?? []);
             $ivaPorIva = (array) ($resumenTotales['ivaPorIva'] ?? []);
+
             $tarifas = collect($resumenTotales['tarifas'] ?? [])->map(fn($rate) => (float) $rate)->values();
 
-            $subtotalGeneral = (float) ($resumenTotales['subtotalGeneral'] ?? $ordenCompra->subtotal ?? 0);
-            $descuentoGeneral = (float) ($resumenTotales['descuentoGeneral'] ?? $ordenCompra->total_descuento ?? 0);
-            $ivaGeneral = (float) ($resumenTotales['ivaGeneral'] ?? $ordenCompra->total_impuesto ?? 0);
-            $totalGeneral = (float) ($resumenTotales['totalGeneral'] ?? $ordenCompra->total ?? 0);
+            // En reporte PDF priorizamos los totales guardados en BD (fuente final confirmada).
+            // Si por alguna razón no existen, usamos el resumen recalculado como respaldo.
+            $subtotalGeneral = round((float) ($ordenCompra->subtotal ?? $resumenTotales['subtotalGeneral'] ?? 0), 2);
+            $descuentoGeneral = round((float) ($ordenCompra->total_descuento ?? $resumenTotales['descuentoGeneral'] ?? 0), 2);
+            $ivaGeneral = round((float) ($ordenCompra->total_impuesto ?? $resumenTotales['ivaGeneral'] ?? 0), 2);
+            $totalGeneral = round((float) ($ordenCompra->total ?? $resumenTotales['totalGeneral'] ?? 0), 2);
+
+            // Ajuste anti-desfase de 1 centavo:
+            // si el IVA por tarifas difiere del IVA general guardado, se aplica la diferencia
+            // a una tarifa con base (>0) para que el resumen cierre exactamente con el total.
+            $ivaPorIvaMostrar = [];
+            $sumaIvaPorTarifa = 0.0;
+
+            foreach ($ivaPorIva as $k => $v) {
+                $ivaPorIvaMostrar[$k] = round((float) $v, 2);
+                $sumaIvaPorTarifa += $ivaPorIvaMostrar[$k];
+            }
+
+            $sumaIvaPorTarifa = round($sumaIvaPorTarifa, 2);
+            $deltaIva = round($ivaGeneral - $sumaIvaPorTarifa, 2);
+
+            if (abs($deltaIva) >= 0.01) {
+                $tarifaAjuste = null;
+                foreach ($tarifas as $rate) {
+                    $keyRate = (string) $rate;
+                    $baseRate = (float) ($basePorIva[$keyRate] ?? ($basePorIva[$rate] ?? 0));
+                    if (round($baseRate, 6) > 0) {
+                        $tarifaAjuste = $keyRate;
+                    }
+                }
+
+                if ($tarifaAjuste !== null) {
+                    $actual = (float) ($ivaPorIvaMostrar[$tarifaAjuste] ?? 0);
+                    $ivaPorIvaMostrar[$tarifaAjuste] = round($actual + $deltaIva, 2);
+                }
+            }
 
             // Helpers
             $fmtRate = fn($r) => rtrim(rtrim(number_format((float) $r, 2, '.', ''), '0'), '.');
@@ -523,7 +555,7 @@
 
                                 <tr>
                                     <th class="left">IVA {{ $fmtRate($rate) }} %</th>
-                                    <td class="right">$ {{ number_format($ivaPorIva[(string) $rate] ?? ($ivaPorIva[$rate] ?? 0), 2) }}</td>
+                                    <td class="right">$ {{ number_format($ivaPorIvaMostrar[(string) $rate] ?? ($ivaPorIvaMostrar[$rate] ?? 0), 2) }}</td>
                                 </tr>
                             @endif
                         @endforeach
