@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Log;
 
 // Importamos el Resource solo para obtener la conexión externa (asumiendo que esa lógica está allí)
 use App\Filament\Resources\ProveedorResource;
+use App\Services\UafeService;
 
 class ProveedorSyncService
 {
@@ -143,7 +144,7 @@ class ProveedorSyncService
                     'clpv_clopv_clpv' => 'PV',
                     'clpv_nom_clpv' => $nombre,
                     'clpv_ruc_clpv' => $identificacion,
-                    'clpv_est_clpv' => 'A',
+                    'clpv_est_clpv' => app(UafeService::class)->mapearEstadoSae($record->uafe_estado),
                     'clpv_fec_has' => $fecha_server,
                     'clpv_fec_reno' => $fecha_server,
                     'clpv_nom_come' => $nombre_comercial,

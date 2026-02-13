@@ -19,7 +19,7 @@ class UafeService
     public function gestionarEstadoYDocumentos(Proveedores $proveedor, array $data): void
     {
         $estadoAnterior = $proveedor->getOriginal('uafe_estado') ?? $proveedor->uafe_estado;
-        $estadoNuevo = $data['uafe_estado'] ?? $proveedor->uafe_estado ?? 'NO_APROBADO';
+        $estadoNuevo = $data['uafe_estado'] ?? $proveedor->uafe_estado ?? 'APROBADO_PARCIAL';
 
         $updateData = [
             'uafe_estado' => $estadoNuevo,
@@ -39,6 +39,13 @@ class UafeService
         if ($estadoAnterior !== $estadoNuevo) {
             $this->registrarHistorial($proveedor, 'CAMBIO_ESTADO', $estadoAnterior, $estadoNuevo, $data['uafe_observacion'] ?? null);
         }
+    }
+
+
+
+    public function mapearEstadoSae(?string $estadoUafe): string
+    {
+        return $estadoUafe === 'NO_APROBADO' ? 'P' : 'A';
     }
 
     public function guardarDocumentos(Proveedores $proveedor, array $files): void

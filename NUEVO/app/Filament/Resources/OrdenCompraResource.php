@@ -433,6 +433,7 @@ class OrdenCompraResource extends Resource
                                         ->table('saeclpv')
                                         ->where('clpv_cod_empr', $amdg_id_empresa)
                                         ->where('clpv_clopv_clpv', 'PV')
+                                        ->where('clpv_est_clpv', 'A')
                                         ->when(!empty($anulados), function ($query) use ($anulados) {
                                             $query->whereNotIn('clpv_ruc_clpv', $anulados);
                                         })
