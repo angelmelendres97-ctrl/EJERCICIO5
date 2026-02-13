@@ -404,9 +404,16 @@
                             // Asegura números válidos
                             $cantidadImp = (float) ($detalle->cantidad ?? 0);
                             $precioUnitImp = (float) ($detalle->costo ?? 0);
+                            $descuentoImp = (float) ($detalle->descuento ?? 0);
+                            $impuestoRateImp = (float) ($detalle->impuesto ?? 0);
 
-                            // Total calculado: precio unitario * cantidad
-                            $totalImp = $cantidadImp * $precioUnitImp;
+                            // Mismo cálculo aplicado en la tabla de edición
+                            $round2 = fn($x) => round((float) $x + 1e-12, 2);
+                            $baseImp = $cantidadImp * $precioUnitImp;
+                            $baseNetaImp = max(0, $baseImp - $descuentoImp);
+                            $baseNeta2Imp = $round2($baseNetaImp);
+                            $iva2Imp = $round2($baseNeta2Imp * ($impuestoRateImp / 100));
+                            $totalImp = $round2($baseNeta2Imp + $iva2Imp);
                         @endphp
 
                         <td class="right">${{ number_format($precioUnitImp, 6, '.', '') }}</td>
@@ -456,12 +463,29 @@
             $basePorIva = (array) ($resumenTotales['basePorIva'] ?? []);
             $baseNetaPorIva = (array) ($resumenTotales['baseNetaPorIva'] ?? []);
             $ivaPorIva = (array) ($resumenTotales['ivaPorIva'] ?? []);
-            $tarifas = collect($resumenTotales['tarifas'] ?? [])->map(fn($rate) => (float) $rate)->values();
 
-            $subtotalGeneral = (float) ($resumenTotales['subtotalGeneral'] ?? $ordenCompra->subtotal ?? 0);
-            $descuentoGeneral = (float) ($resumenTotales['descuentoGeneral'] ?? $ordenCompra->total_descuento ?? 0);
-            $ivaGeneral = (float) ($resumenTotales['ivaGeneral'] ?? $ordenCompra->total_impuesto ?? 0);
-            $totalGeneral = (float) ($resumenTotales['totalGeneral'] ?? $ordenCompra->total ?? 0);
+            $tarifasPresentes = collect(array_keys($basePorIva))
+                ->map(fn($rate) => (float) $rate)
+                ->filter(fn($rate) => round((float) ($basePorIva[(string) $rate] ?? 0), 6) > 0)
+                ->values()
+                ->all();
+
+            $ordenTarifasPreferido = [15, 0, 5, 8, 18];
+            $tarifas = collect($ordenTarifasPreferido)
+                ->filter(fn($rate) => in_array($rate, $tarifasPresentes, true))
+                ->merge(
+                    collect($tarifasPresentes)
+                        ->reject(fn($rate) => in_array($rate, $ordenTarifasPreferido, true))
+                        ->sort()
+                        ->values(),
+                )
+                ->values();
+
+            // Priorizar los totales persistidos de la orden (la misma fuente usada en edición).
+            $subtotalGeneral = (float) ($ordenCompra->subtotal ?? $resumenTotales['subtotalGeneral'] ?? 0);
+            $descuentoGeneral = (float) ($ordenCompra->total_descuento ?? $resumenTotales['descuentoGeneral'] ?? 0);
+            $ivaGeneral = (float) ($ordenCompra->total_impuesto ?? $resumenTotales['ivaGeneral'] ?? 0);
+            $totalGeneral = (float) ($ordenCompra->total ?? $resumenTotales['totalGeneral'] ?? 0);
 
             // Helpers
             $fmtRate = fn($r) => rtrim(rtrim(number_format((float) $r, 2, '.', ''), '0'), '.');
