@@ -59,7 +59,7 @@
     }
 
     .col-unidad {
-        width: 70px;
+        width: 130px;
     }
 
     .col-num {
@@ -172,7 +172,16 @@
                             <input :value="codigoItem(row)" readonly />
                         </td>
  --}}
-                        <td class="col-unidad"><input x-model="row.unidad" readonly /></td>
+                        <td class="col-unidad">
+                            <select x-model="row.unidad" @focus="ensureUnidadesLoaded()"
+                                @click="ensureUnidadesLoaded()" @change="onUnidadChange(row, $event.target.value)">
+                                <option value="UN">UN</option>
+                                <template x-for="u in unidades" :key="`unidad-${u.codigo}`">
+                                    <option :value="u.sigla || u.nombre || u.codigo"
+                                        x-text="u.label || u.sigla || u.nombre || u.codigo"></option>
+                                </template>
+                            </select>
+                        </td>
 
                         <td class="col-num"><input type="number" step="0.000001" x-model="row.cantidad"
                                 @input="sync()"></td>
@@ -303,9 +312,11 @@
                 direction: 'asc',
             },
             bodegas: [],
+            unidades: [],
             productosPorFila: {},
             latestSearchToken: {},
             bodegasContext: null,
+            unidadesContext: null,
             syncTimer: null,
             summary: {
                 subtotal: 0,
@@ -330,8 +341,9 @@
 
                 this.applyServerRows(initialRows || []);
 
-                // ✅ Espera a que bodegas carguen y se haga el mapeo
+                // ✅ Espera a que bodegas y unidades carguen y se haga el mapeo
                 await this.loadBodegas(true);
+                await this.loadUnidades(true);
 
                 // ✅ Fuerza un tick para que el DOM replique el valor seleccionado
                 this.$nextTick(() => {
@@ -413,6 +425,13 @@
                     await this.loadBodegas(true);
                 }
             },
+            async ensureUnidadesLoaded() {
+                const ctx = this.getCurrentContext();
+                const contextKey = `${ctx.empresa}-${ctx.amdgEmpresa}`;
+                if (this.unidadesContext !== contextKey || !this.unidades.length) {
+                    await this.loadUnidades(true);
+                }
+            },
             get livewire() {
                 const id = this.$root.closest('[wire\\:id]')?.getAttribute('wire:id');
                 return id && window.Livewire ? window.Livewire.find(id) : null;
@@ -452,6 +471,10 @@
                 });
             },
             normalizeRow(row) {
+                const unidadOriginal = String(row.unidad ?? '').trim();
+                const unidadOption = this.findUnidadOption(unidadOriginal);
+                const unidadFinal = unidadOption?.sigla || unidadOption?.nombre || unidadOriginal || 'UN';
+
                 return {
                     _key: row._key || (crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math
                         .random())),
@@ -471,7 +494,7 @@
                     codigo_producto: row.codigo_producto ?? '',
                     producto: row.producto ?? '',
                     descripcion_auxiliar: row.descripcion_auxiliar ?? '',
-                    unidad: row.unidad ?? 'UN',
+                    unidad: unidadFinal,
                     cantidad: this.n(row.cantidad ?? 1),
                     costo: this.n(row.costo ?? 0),
                     descuento: this.n(row.descuento ?? 0),
@@ -530,6 +553,34 @@
                 } catch (_) {
                     this.bodegas = [];
                 }
+            },
+            async loadUnidades(force = false) {
+                if (!this.livewire) return;
+                if (!force && this.unidades.length) return;
+                try {
+                    this.unidades = await this.livewire.call('fetchUnidades');
+                    const ctx = this.getCurrentContext();
+                    this.unidadesContext = `${ctx.empresa}-${ctx.amdgEmpresa}`;
+                    this.rows.forEach((row) => {
+                        const option = this.findUnidadOption(row.unidad);
+                        if (option) {
+                            row.unidad = option.sigla || option.nombre || row.unidad;
+                        }
+                    });
+                } catch (_) {
+                    this.unidades = [];
+                }
+            },
+            findUnidadOption(value) {
+                const compare = String(value ?? '').trim().toLowerCase();
+                if (compare === '') return null;
+
+                return this.unidades.find((u) => {
+                    const codigo = String(u.codigo ?? '').trim().toLowerCase();
+                    const sigla = String(u.sigla ?? '').trim().toLowerCase();
+                    const nombre = String(u.nombre ?? '').trim().toLowerCase();
+                    return compare === codigo || compare === sigla || compare === nombre;
+                }) || null;
             },
             fillProductoFiltro(row) {
                 row.producto_filtro = row.producto ? `${row.producto} (${row.codigo_producto || ''})`.trim() : '';
@@ -597,6 +648,11 @@
                 await this.searchProductos(row);
                 this.sync();
             },
+            onUnidadChange(row, value) {
+                const option = this.findUnidadOption(value);
+                row.unidad = option?.sigla || option?.nombre || String(value || 'UN');
+                this.sync();
+            },
             selectProducto(row, p) {
                 if (!p) {
                     this.sync();
@@ -606,7 +662,8 @@
                 row.producto = p.nombre;
                 row.costo = this.n(p.costo);
                 row.impuesto = String(Math.round(this.n(p.impuesto)));
-                row.unidad = p.unidad || row.unidad || 'UN';
+                const option = this.findUnidadOption(p.unidad);
+                row.unidad = option?.sigla || option?.nombre || p.unidad || row.unidad || 'UN';
                 row.descripcion_auxiliar = '';
                 this.fillProductoFiltro(row);
                 row.showResultados = false;
