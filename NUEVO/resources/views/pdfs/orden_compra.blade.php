@@ -404,9 +404,15 @@
                             // Asegura números válidos
                             $cantidadImp = (float) ($detalle->cantidad ?? 0);
                             $precioUnitImp = (float) ($detalle->costo ?? 0);
+                            $descuentoImp = (float) ($detalle->descuento ?? 0);
+                            $impuestoRateImp = (float) ($detalle->impuesto ?? 0);
 
-                            // Total calculado: precio unitario * cantidad
-                            $totalImp = $cantidadImp * $precioUnitImp;
+                            // Cálculo consistente con el resumen usado en crear/editar.
+                            $baseImp = $cantidadImp * $precioUnitImp;
+                            $netoImp = max(0, $baseImp - $descuentoImp);
+                            $netoImp = round($netoImp + 1.0e-12, 2);
+                            $ivaImp = round(($netoImp * $impuestoRateImp) / 100 + 1.0e-12, 2);
+                            $totalImp = round($netoImp + $ivaImp + 1.0e-12, 2);
                         @endphp
 
                         <td class="right">${{ number_format($precioUnitImp, 6, '.', '') }}</td>
@@ -515,16 +521,23 @@
 
                         {{-- TARIFA + IVA (intercalados, como factura real) --}}
                         @foreach ($tarifas as $rate)
-                            @if (round((float) ($basePorIva[(string) $rate] ?? ($basePorIva[$rate] ?? 0)), 6) > 0)
+                            @php
+                                $baseNetaTarifa = (float) ($baseNetaPorIva[(string) $rate] ?? ($baseNetaPorIva[$rate] ?? 0));
+                                $ivaTarifa = (float) ($ivaPorIva[(string) $rate] ?? ($ivaPorIva[$rate] ?? 0));
+                            @endphp
+
+                            @if (round($baseNetaTarifa, 6) > 0)
                                 <tr>
                                     <th class="left">TARIFA {{ $fmtRate($rate) }} %</th>
-                                    <td class="right">$ {{ number_format($baseNetaPorIva[(string) $rate] ?? ($baseNetaPorIva[$rate] ?? 0), 2) }}</td>
+                                    <td class="right">$ {{ number_format($baseNetaTarifa, 2) }}</td>
                                 </tr>
 
-                                <tr>
-                                    <th class="left">IVA {{ $fmtRate($rate) }} %</th>
-                                    <td class="right">$ {{ number_format($ivaPorIva[(string) $rate] ?? ($ivaPorIva[$rate] ?? 0), 2) }}</td>
-                                </tr>
+                                @if (round($ivaTarifa, 6) > 0)
+                                    <tr>
+                                        <th class="left">IVA {{ $fmtRate($rate) }} %</th>
+                                        <td class="right">$ {{ number_format($ivaTarifa, 2) }}</td>
+                                    </tr>
+                                @endif
                             @endif
                         @endforeach
 
