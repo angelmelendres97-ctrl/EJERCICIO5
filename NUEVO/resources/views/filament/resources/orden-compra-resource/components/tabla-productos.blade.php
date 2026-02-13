@@ -172,7 +172,15 @@
                             <input :value="codigoItem(row)" readonly />
                         </td>
  --}}
-                        <td class="col-unidad"><input x-model="row.unidad" readonly /></td>
+                        <td class="col-unidad">
+                            <select x-model="row.unidad" @change="sync()" @focus="ensureUnidadesLoaded()"
+                                @click="ensureUnidadesLoaded()">
+                                <option value="">Seleccione</option>
+                                <template x-for="unidad in unidades" :key="`${unidad.value}-${unidad.label}`">
+                                    <option :value="unidad.value" x-text="unidad.label"></option>
+                                </template>
+                            </select>
+                        </td>
 
                         <td class="col-num"><input type="number" step="0.000001" x-model="row.cantidad"
                                 @input="sync()"></td>
@@ -303,9 +311,11 @@
                 direction: 'asc',
             },
             bodegas: [],
+            unidades: [],
             productosPorFila: {},
             latestSearchToken: {},
             bodegasContext: null,
+            unidadesContext: null,
             syncTimer: null,
             summary: {
                 subtotal: 0,
@@ -332,6 +342,7 @@
 
                 // ✅ Espera a que bodegas carguen y se haga el mapeo
                 await this.loadBodegas(true);
+                await this.loadUnidades(true);
 
                 // ✅ Fuerza un tick para que el DOM replique el valor seleccionado
                 this.$nextTick(() => {
@@ -411,6 +422,14 @@
                 const contextKey = `${ctx.empresa}-${ctx.amdgEmpresa}-${ctx.amdgSucursal}`;
                 if (this.bodegasContext !== contextKey || !this.bodegas.length) {
                     await this.loadBodegas(true);
+                }
+            },
+
+            async ensureUnidadesLoaded() {
+                const ctx = this.getCurrentContext();
+                const contextKey = `${ctx.empresa}-${ctx.amdgEmpresa}`;
+                if (this.unidadesContext !== contextKey || !this.unidades.length) {
+                    await this.loadUnidades(true);
                 }
             },
             get livewire() {
@@ -507,6 +526,7 @@
                 }
                 this.rows.forEach(r => this.fillProductoFiltro(r));
                 this.ensureBodegasLoaded();
+                this.ensureUnidadesLoaded();
                 this.sync();
             },
             async loadBodegas(force = false) {
@@ -529,6 +549,21 @@
                     });
                 } catch (_) {
                     this.bodegas = [];
+                }
+            },
+
+            async loadUnidades(force = false) {
+                if (!this.livewire) return;
+                if (!force && this.unidades.length) return;
+                try {
+                    const list = await this.livewire.call('fetchUnidades');
+                    const ctx = this.getCurrentContext();
+                    this.unidadesContext = `${ctx.empresa}-${ctx.amdgEmpresa}`;
+                    const normalized = Array.isArray(list) ? list : [];
+                    const hasUn = normalized.some((u) => String(u?.value ?? '').toUpperCase() === 'UN');
+                    this.unidades = hasUn ? normalized : [{ value: 'UN', label: 'UN' }, ...normalized];
+                } catch (_) {
+                    this.unidades = [{ value: 'UN', label: 'UN' }];
                 }
             },
             fillProductoFiltro(row) {
@@ -588,7 +623,8 @@
             async onBodegaChange(row) {
                 row.codigo_producto = '';
                 row.producto = '';
-                row.unidad = 'UN';
+                const unidadActual = String(row.unidad ?? '').trim();
+                row.unidad = unidadActual !== '' ? unidadActual : 'UN';
                 row.producto_filtro = '';
                 row.showResultados = false;
                 row.highlightedIndex = -1;

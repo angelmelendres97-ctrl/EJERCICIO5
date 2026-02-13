@@ -476,8 +476,10 @@ class EditOrdenCompra extends EditRecord
                 ])->filter()->implode(' | '));
             }
 
-            $detallePedido = trim((string) ($detalle->dped_det_dped ?? ''));
-            $detallePedido = $detallePedido !== '' ? $detallePedido : null;
+            $detallePedidoRaw = trim((string) ($detalle->dped_det_dped ?? ''));
+            $detallePedido = ($esAuxiliar || $esServicio) && $detallePedidoRaw !== ''
+                ? $detallePedidoRaw
+                : null;
 
             $productoLinea = $esServicio
                 ? ($detalle->dped_det_dped ?? $productoNombre)
@@ -878,6 +880,63 @@ class EditOrdenCompra extends EditRecord
                     'impuesto' => (float) ($r->prbo_iva_porc ?? 0),
                     'unidad' => (string) ($r->unid_nom_unid ?? $r->prbo_cod_unid ?? 'UN'),
                 ])
+                ->all();
+        } catch (\Throwable $e) {
+            return [];
+        }
+    }
+
+
+    public function fetchUnidades(): array
+    {
+        $empresaId = $this->data['id_empresa'] ?? null;
+        $amdgEmpresa = $this->data['amdg_id_empresa'] ?? null;
+
+        if (!$empresaId || !$amdgEmpresa) {
+            return [];
+        }
+
+        $connectionName = OrdenCompraResource::getExternalConnectionName((int) $empresaId);
+        if (!$connectionName) {
+            return [];
+        }
+
+        try {
+            $schema = DB::connection($connectionName)->getSchemaBuilder();
+            if (!$schema->hasTable('saeunid')) {
+                return [];
+            }
+
+            return DB::connection($connectionName)
+                ->table('saeunid')
+                ->when(
+                    $schema->hasColumn('saeunid', 'unid_cod_empr'),
+                    fn($q) => $q->where('unid_cod_empr', $amdgEmpresa)
+                )
+                ->select([
+                    'unid_cod_unid',
+                    DB::raw('MAX(unid_nom_unid) as unid_nom_unid'),
+                    DB::raw('MAX(unid_sigl_unid) as unid_sigl_unid'),
+                ])
+                ->groupBy('unid_cod_unid')
+                ->orderBy('unid_nom_unid')
+                ->get()
+                ->map(function ($unidad) {
+                    $sigla = trim((string) ($unidad->unid_sigl_unid ?? ''));
+                    $nombre = trim((string) ($unidad->unid_nom_unid ?? ''));
+                    $codigo = trim((string) ($unidad->unid_cod_unid ?? ''));
+
+                    $value = $sigla !== '' ? $sigla : ($nombre !== '' ? $nombre : ($codigo !== '' ? $codigo : 'UN'));
+                    $labelBase = $nombre !== '' ? $nombre : $value;
+                    $label = $sigla !== '' ? sprintf('%s (%s)', $labelBase, $sigla) : $labelBase;
+
+                    return [
+                        'value' => $value,
+                        'label' => $label,
+                    ];
+                })
+                ->unique('value')
+                ->values()
                 ->all();
         } catch (\Throwable $e) {
             return [];
