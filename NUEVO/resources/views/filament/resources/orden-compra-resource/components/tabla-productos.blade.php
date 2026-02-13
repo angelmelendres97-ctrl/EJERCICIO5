@@ -128,8 +128,12 @@
                 <tr>
                     <th class="col-x"></th>
                     <th class="col-bodega">Bodega</th>
-                    <th class="col-producto">Producto</th>
-
+                    <th class="col-producto cursor-pointer select-none" @click="toggleSort('producto')">
+                        <div class="inline-flex items-center gap-1">
+                            <span>Producto</span>
+                            <span class="text-[10px]" x-text="sortIndicator('producto')"></span>
+                        </div>
+                    </th>
                     <th class="col-unidad">Unidad</th>
                     <th class="col-cant">Cant.</th>
                     <th class="col-num">Costo</th>
@@ -172,7 +176,13 @@
                             <input :value="codigoItem(row)" readonly />
                         </td>
  --}}
-                        <td class="col-unidad"><input x-model="row.unidad" readonly /></td>
+                        <td class="col-unidad">
+                            <select x-model="row.unidad" @focus="ensureUnidadesLoaded()" @change="sync()">
+                                <template x-for="u in unitOptionsForRow(row)" :key="`unidad-${row._key}-${u.value}`">
+                                    <option :value="u.value" x-text="u.label"></option>
+                                </template>
+                            </select>
+                        </td>
 
                         <td class="col-num"><input type="number" step="0.000001" x-model="row.cantidad"
                                 @input="sync()"></td>
@@ -303,9 +313,11 @@
                 direction: 'asc',
             },
             bodegas: [],
+            unidades: [],
             productosPorFila: {},
             latestSearchToken: {},
             bodegasContext: null,
+            unidadesContext: null,
             syncTimer: null,
             summary: {
                 subtotal: 0,
@@ -332,6 +344,7 @@
 
                 // ✅ Espera a que bodegas carguen y se haga el mapeo
                 await this.loadBodegas(true);
+                await this.loadUnidades(true);
 
                 // ✅ Fuerza un tick para que el DOM replique el valor seleccionado
                 this.$nextTick(() => {
@@ -396,6 +409,11 @@
                     return String(descripcion ?? '').toLocaleLowerCase();
                 }
 
+                if (field === 'producto') {
+                    // Ordena por lo que se ve en la columna (productoColumna)
+                    return String(this.productoColumna(row) ?? '').toLocaleLowerCase();
+                }
+
                 return '';
             },
 
@@ -411,6 +429,13 @@
                 const contextKey = `${ctx.empresa}-${ctx.amdgEmpresa}-${ctx.amdgSucursal}`;
                 if (this.bodegasContext !== contextKey || !this.bodegas.length) {
                     await this.loadBodegas(true);
+                }
+            },
+            async ensureUnidadesLoaded() {
+                const ctx = this.getCurrentContext();
+                const contextKey = `${ctx.empresa}-${ctx.amdgEmpresa}`;
+                if (this.unidadesContext !== contextKey || !this.unidades.length) {
+                    await this.loadUnidades(true);
                 }
             },
             get livewire() {
@@ -530,6 +555,76 @@
                 } catch (_) {
                     this.bodegas = [];
                 }
+            },
+            async loadUnidades(force = false) {
+                if (!this.livewire) return;
+                if (!force && this.unidades.length) return;
+
+                try {
+                    const list = await this.livewire.call('fetchUnidades');
+                    const ctx = this.getCurrentContext();
+                    this.unidadesContext = `${ctx.empresa}-${ctx.amdgEmpresa}`;
+
+                    const normalized = (list || []).map((u) => ({
+                        value: String(u.value ?? ''),
+                        label: String(u.label ?? u.value ?? ''),
+                    })).filter((u) => u.value !== '');
+
+                    this.unidades = normalized.length ? normalized : [{
+                        value: 'UN',
+                        label: 'UN'
+                    }];
+
+                    this.rows.forEach((row) => {
+                        if (!row.unidad) {
+                            row.unidad = this.unidades[0]?.value || 'UN';
+                        }
+
+                        const unidadActual = String(row.unidad);
+                        if (!this.unidades.find((u) => u.value === unidadActual)) {
+                            this.unidades.push({
+                                value: unidadActual,
+                                label: unidadActual
+                            });
+                        }
+                    });
+                } catch (_) {
+                    this.unidades = [{
+                        value: 'UN',
+                        label: 'UN'
+                    }];
+                }
+            },
+            unitOptionsForRow(row) {
+                const currentValue = String(row?.unidad ?? '').trim();
+                const options = [];
+
+                if (currentValue !== '') {
+                    options.push({
+                        value: currentValue,
+                        label: currentValue
+                    });
+                }
+
+                for (const u of (this.unidades || [])) {
+                    const value = String(u?.value ?? '').trim();
+                    if (value === '') continue;
+                    if (!options.find((o) => o.value === value)) {
+                        options.push({
+                            value,
+                            label: String(u?.label ?? value)
+                        });
+                    }
+                }
+
+                if (!options.length) {
+                    options.push({
+                        value: 'UN',
+                        label: 'UN'
+                    });
+                }
+
+                return options;
             },
             fillProductoFiltro(row) {
                 row.producto_filtro = row.producto ? `${row.producto} (${row.codigo_producto || ''})`.trim() : '';
@@ -653,8 +748,7 @@
                 let label = '';
                 if (aux !== '' && det !== '') label = `${aux} - ${det}`;
                 else if (aux !== '') label = aux;
-                else if (det !== '') label = det;
-                else label = String(row.producto ?? '').trim(); // fallback nombre producto
+                else label = String(row.producto ?? '').trim();
 
                 // Si no hay nada, muestra solo el código si existe
                 if (label === '') label = cod;
