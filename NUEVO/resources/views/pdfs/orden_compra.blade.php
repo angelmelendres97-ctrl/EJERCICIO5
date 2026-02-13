@@ -405,7 +405,7 @@
                             $cantidadImp = (float) ($detalle->cantidad ?? 0);
                             $precioUnitImp = (float) ($detalle->costo ?? 0);
 
-                            // Total calculado: precio unitario * cantidad
+                            // En la tabla de productos del PDF, la columna Total corresponde a base (cant * costo)
                             $totalImp = $cantidadImp * $precioUnitImp;
                         @endphp
 
@@ -456,8 +456,25 @@
             $basePorIva = (array) ($resumenTotales['basePorIva'] ?? []);
             $baseNetaPorIva = (array) ($resumenTotales['baseNetaPorIva'] ?? []);
             $ivaPorIva = (array) ($resumenTotales['ivaPorIva'] ?? []);
-            $tarifas = collect($resumenTotales['tarifas'] ?? [])->map(fn($rate) => (float) $rate)->values();
 
+            $tarifasPresentes = collect(array_keys($basePorIva))
+                ->map(fn($rate) => (float) $rate)
+                ->filter(fn($rate) => round((float) ($basePorIva[(string) $rate] ?? 0), 6) > 0)
+                ->values()
+                ->all();
+
+            $ordenTarifasPreferido = [15, 0, 5, 8, 18];
+            $tarifas = collect($ordenTarifasPreferido)
+                ->filter(fn($rate) => in_array($rate, $tarifasPresentes, true))
+                ->merge(
+                    collect($tarifasPresentes)
+                        ->reject(fn($rate) => in_array($rate, $ordenTarifasPreferido, true))
+                        ->sort()
+                        ->values(),
+                )
+                ->values();
+
+            // En resumen del PDF usar la misma lógica de cálculo de la orden (recalculado por detalle)
             $subtotalGeneral = (float) ($resumenTotales['subtotalGeneral'] ?? $ordenCompra->subtotal ?? 0);
             $descuentoGeneral = (float) ($resumenTotales['descuentoGeneral'] ?? $ordenCompra->total_descuento ?? 0);
             $ivaGeneral = (float) ($resumenTotales['ivaGeneral'] ?? $ordenCompra->total_impuesto ?? 0);
