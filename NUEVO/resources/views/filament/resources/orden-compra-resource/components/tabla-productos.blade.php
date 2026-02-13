@@ -1,10 +1,7 @@
 @php
     $rows = $detalles ?? [];
 @endphp
-
-
 <style>
-    /* Contenedor con scroll horizontal */
     .oc-table-wrap {
         overflow-x: auto;
         overflow-y: visible;
@@ -12,15 +9,13 @@
         border-radius: 12px;
     }
 
-    /* Tabla: fija los anchos por columna */
     .oc-table {
         width: 100%;
         table-layout: fixed;
-        /* CLAVE: respeta anchos */
         border-collapse: collapse;
         font-size: 12px;
-        min-width: 1100px;
-        /* evita que todo se aplaste demasiado */
+        min-width: 900px;
+        /* baja porque quitamos 2 columnas */
     }
 
     .oc-table thead th {
@@ -37,7 +32,6 @@
         vertical-align: top;
     }
 
-    /* Asegura que inputs/selects no revienten el ancho */
     .oc-table input,
     .oc-table select {
         width: 100%;
@@ -45,38 +39,23 @@
         box-sizing: border-box;
     }
 
-    /* Truncar texto visual en celdas que pueden crecer */
     .oc-ellipsis {
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
     }
 
-    /* Anchos por columna (ajusta a gusto) */
     .col-x {
         width: 34px;
     }
 
-    /* botón X */
     .col-bodega {
         width: 150px;
     }
 
-    /* ✅ Bodega más pequeña */
+    /* ✅ Producto ahora ocupa lo que antes era Producto + Código + Descripción */
     .col-producto {
-        width: 180px;
-    }
-
-    /* un poco más grande */
-    .col-iva {
-        width: 100px;
-    }
-
-    /* para que se vea completo "IVA %" y el select */
-
-
-    .col-codigo {
-        width: 140px;
+        width: 400px;
     }
 
     .col-unidad {
@@ -84,27 +63,60 @@
     }
 
     .col-num {
-        width: 90px;
+        width: 110px;
     }
 
-    /* cant/costo/desc */
+    .col-cant {
+        width: 70px;
+    }
+
+    .col-descuento {
+        width: 50px;
+    }
+
     .col-subtotal {
         width: 110px;
     }
 
     .col-iva {
-        width: 80px;
+        width: 60px;
     }
 
     .col-total {
         width: 110px;
     }
 
-    .col-desc {
-        width: 360px;
+    /* Tabla: baja tamaño general */
+    .oc-table {
+        font-size: 11px;
+        /* antes 12px */
     }
 
-    /* descripción larga */
+    /* Encabezado un poquito más compacto */
+    .oc-table thead th {
+        padding: 6px;
+        /* antes 8px */
+        font-size: 11px;
+        /* asegura mismo tamaño */
+    }
+
+    /* Celdas más compactas */
+    .oc-table td {
+        padding: 3px;
+        /* antes 4px */
+        font-size: 11px;
+    }
+
+    /* Inputs y selects más pequeños (texto y alto) */
+    .oc-table input,
+    .oc-table select {
+        font-size: 11px;
+        padding: 2px 4px;
+        /* reduce alto */
+        line-height: 1.1;
+        height: 24px;
+        /* opcional: controla altura */
+    }
 </style>
 
 
@@ -118,29 +130,16 @@
                     <th class="col-bodega">Bodega</th>
                     <th class="col-producto">Producto</th>
 
-                    <th class="col-codigo" @click="toggleSort('codigo')" style="cursor:pointer; user-select:none;">
-                        <div style="display:inline-flex; align-items:center; gap:6px;">
-                            <span>Código</span>
-                            <span style="font-size:10px;" x-text="sortIndicator('codigo')"></span>
-                        </div>
-                    </th>
-
                     <th class="col-unidad">Unidad</th>
-                    <th class="col-num">Cant.</th>
+                    <th class="col-cant">Cant.</th>
                     <th class="col-num">Costo</th>
-                    <th class="col-num">Desc.</th>
+                    <th class="col-descuento">Desc.</th>
                     <th class="col-subtotal" style="text-align:right;">Subtotal</th>
                     <th class="col-iva">IVA %</th>
                     <th class="col-total" style="text-align:right;">Total</th>
-
-                    <th class="col-desc" @click="toggleSort('descripcion')" style="cursor:pointer; user-select:none;">
-                        <div style="display:inline-flex; align-items:center; gap:6px;">
-                            <span>Descripción</span>
-                            <span style="font-size:10px;" x-text="sortIndicator('descripcion')"></span>
-                        </div>
-                    </th>
                 </tr>
             </thead>
+
 
             <tbody>
                 <!-- tu x-for igual -->
@@ -151,7 +150,7 @@
                                 @click.stop.prevent="removeRowByKey(row._key)">✕</button>
                         </td>
 
-                        <td class="col-bodega">
+                        <td class="col-bodega" style="font-size: 11px">
                             <select :key="`bodega-${row._key}-${bodegas.length}`" :value="String(row.id_bodega ?? '')"
                                 @focus="ensureBodegasLoaded()" @click="ensureBodegasLoaded()"
                                 @change="row.id_bodega = String($event.target.value || ''); onBodegaChange(row);">
@@ -163,15 +162,16 @@
                             </select>
                         </td>
 
-                        <td class="col-producto">
-                            <input placeholder="Seleccionar producto..." x-model="row.producto_filtro" readonly
-                                @click="openProductoModal(row)" />
+                        <td class="col-producto oc-ellipsis">
+                            <input :value="productoColumna(row)" readonly @click="openProductoModal(row)"
+                                placeholder="Seleccionar producto..." />
                         </td>
 
-                        <td class="col-codigo oc-ellipsis">
+
+                        {{--   <td class="col-codigo oc-ellipsis">
                             <input :value="codigoItem(row)" readonly />
                         </td>
-
+ --}}
                         <td class="col-unidad"><input x-model="row.unidad" readonly /></td>
 
                         <td class="col-num"><input type="number" step="0.000001" x-model="row.cantidad"
@@ -197,9 +197,9 @@
                         <td class="col-total" style="text-align:right; font-weight:700;"
                             x-text="money4(lineTotal(row))"></td>
 
-                        <td class="col-desc oc-ellipsis">
+                        {{--    <td class="col-desc oc-ellipsis">
                             <input :value="descripcionColumna(row)" readonly />
-                        </td>
+                        </td> --}}
                     </tr>
                 </template>
             </tbody>
@@ -642,6 +642,29 @@
 
                 const cod = String(row.codigo_producto ?? '').trim();
                 return cod;
+            },
+            productoColumna(row) {
+                const cod = this.codigoItem(row);
+
+                const aux = String(row.descripcion_auxiliar ?? '').trim(); // dped_desc_auxiliar
+                const det = String(row.detalle_pedido ?? '').trim(); // dped_det_dped
+
+                // Si viene desde pedido con auxiliar/detalle, prioriza eso
+                let label = '';
+                if (aux !== '' && det !== '') label = `${aux} - ${det}`;
+                else if (aux !== '') label = aux;
+                else if (det !== '') label = det;
+                else label = String(row.producto ?? '').trim(); // fallback nombre producto
+
+                // Si no hay nada, muestra solo el código si existe
+                if (label === '') label = cod;
+
+                // Formato final: "label (CODIGO)" si hay código
+                if (cod && label && !label.includes(`(${cod})`)) {
+                    return `${label} (${cod})`;
+                }
+
+                return label;
             },
 
             descripcionColumna(row) {
