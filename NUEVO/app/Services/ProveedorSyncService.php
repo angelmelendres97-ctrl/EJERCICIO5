@@ -166,6 +166,19 @@ class ProveedorSyncService
                     'clpv_cod_mone' => '1',
                 ];
 
+                $uafeColumnMap = [
+                    'clpv_uafe_estado' => $record->uafe_estado,
+                    'clpv_uafe_fec_val' => optional($record->uafe_fecha_validacion)?->format('Y-m-d H:i:s'),
+                    'clpv_uafe_observacion' => $record->uafe_observacion,
+                ];
+
+                foreach ($uafeColumnMap as $column => $value) {
+                    if (DB::connection($conexionPgsql)->getSchemaBuilder()->hasColumn('saeclpv', $column)) {
+                        $proveedorData[$column] = $value;
+                    }
+                }
+
+
                 if (!$clpv_cod_clpv) {
                     // Solo en la creación se establece la fecha de inicio
                     $proveedorData['clpv_fec_des'] = $fecha_server;

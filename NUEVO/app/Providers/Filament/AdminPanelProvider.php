@@ -34,7 +34,7 @@ class AdminPanelProvider extends PanelProvider
             ->colors([
                 'primary' => Color::Amber,
             ])
-            ->navigation(function (NavigationBuilder $navigation) {
+           /*  ->navigation(function (NavigationBuilder $navigation) {
                 $user = auth()->user();
 
                 if (! $user) {
@@ -74,7 +74,7 @@ class AdminPanelProvider extends PanelProvider
 
                 // OJO: aquí NO mandamos ->items(), solo grupos con items dentro
                 return $navigation->groups($navigationGroups);
-            })
+            }) */
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\\Filament\\Pages')
             ->pages([

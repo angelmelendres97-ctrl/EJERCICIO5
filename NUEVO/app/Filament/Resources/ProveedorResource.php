@@ -21,6 +21,7 @@ use Filament\Forms\Set;
 use Filament\Forms\Components\Actions\Action;
 use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\Http;
+use App\Services\UafeService;
 
 class ProveedorResource extends Resource
 {
@@ -682,6 +683,45 @@ class ProveedorResource extends Resource
                         })
                         ->columns(2)
                 ])->columns(1),
+
+            Forms\Components\Section::make('Aprobaciones UAFE')
+                ->schema([
+                    Forms\Components\Select::make('uafe_estado')
+                        ->label('Estado UAFE')
+                        ->options([
+                            'NO_APROBADO' => 'No aprobado',
+                            'APROBADO_PARCIAL' => 'Aprobado parcial',
+                            'APROBADO' => 'Aprobado',
+                        ])
+                        ->default('NO_APROBADO')
+                        ->required()
+                        ->live()
+                        ->afterStateUpdated(function (Set $set, $state): void {
+                            if ($state === 'APROBADO') {
+                                $set('uafe_fecha_validacion', now());
+                            }
+                        }),
+                    Forms\Components\DateTimePicker::make('uafe_fecha_validacion')
+                        ->label('Fecha de validación')
+                        ->seconds(false)
+                        ->visible(fn(Get $get): bool => $get('uafe_estado') === 'APROBADO')
+                        ->required(fn(Get $get): bool => $get('uafe_estado') === 'APROBADO'),
+                    Forms\Components\Textarea::make('uafe_observacion')
+                        ->label('Observación UAFE')
+                        ->rows(3)
+                        ->columnSpanFull(),
+                    Forms\Components\FileUpload::make('uafe_documentos_upload')
+                        ->label('Documentos UAFE')
+                        ->multiple()
+                        ->disk('public')
+                        ->directory('uafe/proveedores/tmp')
+                        ->acceptedFileTypes(['application/pdf', 'image/*'])
+                        ->helperText('Adjunta dos o más documentos UAFE.')
+                        ->minFiles(2)
+                        ->dehydrated(false)
+                        ->columnSpanFull(),
+                ])
+                ->columns(2),
         ];
     }
 
@@ -722,6 +762,16 @@ class ProveedorResource extends Resource
                     ->badge()
                     ->color('success')
                     ->searchable()
+                    ->sortable(),
+
+                Tables\Columns\TextColumn::make('uafe_estado')
+                    ->label('Estado UAFE')
+                    ->badge()
+                    ->color(fn(string $state): string => match ($state) {
+                        'APROBADO' => 'success',
+                        'APROBADO_PARCIAL' => 'warning',
+                        default => 'danger',
+                    })
                     ->sortable(),
 
                 // Fecha de creación
@@ -801,6 +851,28 @@ class ProveedorResource extends Resource
                             ->title('Proveedor anulado')
                             ->success()
                             ->send();
+                    }),
+                Tables\Actions\Action::make('reenviar_correo_uafe')
+                    ->label('Reenviar correo UAFE')
+                    ->icon('heroicon-o-envelope')
+                    ->color('warning')
+                    ->requiresConfirmation()
+                    ->visible(fn(Proveedores $record): bool => in_array($record->uafe_estado, ['NO_APROBADO', 'APROBADO_PARCIAL'], true))
+                    ->action(function (Proveedores $record): void {
+                        try {
+                            app(UafeService::class)->enviarCorreoSolicitudDocumentos($record);
+
+                            Notification::make()
+                                ->title('Correo UAFE enviado correctamente.')
+                                ->success()
+                                ->send();
+                        } catch (\Throwable $e) {
+                            Notification::make()
+                                ->title('No se pudo enviar el correo UAFE.')
+                                ->body($e->getMessage())
+                                ->danger()
+                                ->send();
+                        }
                     }),
                 Tables\Actions\DeleteAction::make()
                     ->label('Eliminar')

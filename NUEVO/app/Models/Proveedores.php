@@ -33,11 +33,24 @@ class Proveedores extends Model
         'direcccion',
         'correo',
         'anulada',
+        'uafe_estado',
+        'uafe_fecha_validacion',
+        'uafe_observacion',
+        'uafe_sync_pendiente',
     ];
 
     protected $casts = [
         'anulada' => 'boolean',
+        'uafe_fecha_validacion' => 'datetime',
+        'uafe_sync_pendiente' => 'boolean',
     ];
+
+
+    public function uafeDocumentos()
+    {
+        return $this->hasMany(ProveedorUafeDocumento::class, 'proveedor_id');
+    }
+
     public function lineasNegocio()
     {
         return $this->belongsToMany(LineaNegocio::class, 'proveedor_linea_negocios', 'proveedor_id', 'linea_negocio_id');
