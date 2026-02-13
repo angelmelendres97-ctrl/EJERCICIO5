@@ -839,6 +839,8 @@ class EditOrdenCompra extends EditRecord
         }
 
         try {
+            $schema = DB::connection($connectionName)->getSchemaBuilder();
+
             return DB::connection($connectionName)
                 ->table('saeprod')
                 ->join('saeprbo', function ($join) {
@@ -846,7 +848,13 @@ class EditOrdenCompra extends EditRecord
                         ->on('prod_cod_empr', '=', 'prbo_cod_empr')
                         ->on('prod_cod_sucu', '=', 'prbo_cod_sucu');
                 })
-                ->leftJoin('saeunid', 'prbo_cod_unid', '=', 'unid_cod_unid')
+                ->leftJoin('saeunid', function ($join) use ($schema) {
+                    $join->on('prbo_cod_unid', '=', 'unid_cod_unid');
+
+                    if ($schema->hasColumn('saeunid', 'unid_cod_empr')) {
+                        $join->on('prbo_cod_empr', '=', 'unid_cod_empr');
+                    }
+                })
                 ->where('prod_cod_empr', $amdgEmpresa)
                 ->where('prod_cod_sucu', $amdgSucursal)
                 ->where('prbo_cod_bode', $bodegaId)
@@ -868,6 +876,7 @@ class EditOrdenCompra extends EditRecord
                     'prbo_uco_prod',
                     'prbo_iva_porc',
                     'prbo_cod_unid',
+                    'unid_sigl_unid',
                     'unid_nom_unid',
                 ])
                 ->map(fn($r) => [
@@ -876,8 +885,49 @@ class EditOrdenCompra extends EditRecord
                     'label' => trim(((string) $r->prod_nom_prod) . ' (' . ((string) $r->prod_cod_prod) . ')'),
                     'costo' => (float) ($r->prbo_uco_prod ?? 0),
                     'impuesto' => (float) ($r->prbo_iva_porc ?? 0),
-                    'unidad' => (string) ($r->unid_nom_unid ?? $r->prbo_cod_unid ?? 'UN'),
+                    'unidad' => (string) ($r->unid_sigl_unid ?? $r->unid_nom_unid ?? $r->prbo_cod_unid ?? 'UN'),
                 ])
+                ->all();
+        } catch (\Throwable $e) {
+            return [];
+        }
+    }
+
+
+
+    public function fetchUnidades(): array
+    {
+        $empresaId = $this->data['id_empresa'] ?? null;
+        $amdgEmpresa = $this->data['amdg_id_empresa'] ?? null;
+
+        if (!$empresaId || !$amdgEmpresa) {
+            return [];
+        }
+
+        $connectionName = OrdenCompraResource::getExternalConnectionName((int) $empresaId);
+        if (!$connectionName) {
+            return [];
+        }
+
+        try {
+            $schema = DB::connection($connectionName)->getSchemaBuilder();
+
+            return DB::connection($connectionName)
+                ->table('saeunid')
+                ->when(
+                    $schema->hasColumn('saeunid', 'unid_cod_empr'),
+                    fn($q) => $q->where('unid_cod_empr', $amdgEmpresa)
+                )
+                ->select(['unid_cod_unid', 'unid_sigl_unid', 'unid_nom_unid'])
+                ->orderBy('unid_nom_unid')
+                ->limit(500)
+                ->get()
+                ->map(fn($u) => [
+                    'id' => (string) $u->unid_cod_unid,
+                    'label' => (string) ($u->unid_sigl_unid ?: $u->unid_nom_unid ?: $u->unid_cod_unid),
+                ])
+                ->unique('label')
+                ->values()
                 ->all();
         } catch (\Throwable $e) {
             return [];
