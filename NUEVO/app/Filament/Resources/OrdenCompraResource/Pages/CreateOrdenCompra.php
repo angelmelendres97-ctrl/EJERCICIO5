@@ -279,8 +279,6 @@ class CreateOrdenCompra extends CreateRecord
 
                 $codigoVisual = $codigoAux ?: ($codigoProducto ?: null);
 
-                $codigoVisual = $auxDesc ?: ($codigoProducto ?: null);
-
                 return [
                     'id_bodega' => $id_bodega_item, // Set the correct warehouse for this line
                     'bodega' => (string) $id_bodega_item,
@@ -330,6 +328,63 @@ class CreateOrdenCompra extends CreateRecord
         $this->dispatch('close-modal', id: 'importar_pedido');
     }
 
+
+
+    public function fetchUnidades(): array
+    {
+        $empresaId = $this->data['id_empresa'] ?? null;
+        $amdgEmpresa = $this->data['amdg_id_empresa'] ?? null;
+
+        if (!$empresaId || !$amdgEmpresa) {
+            return [['value' => 'UN', 'label' => 'UN']];
+        }
+
+        $connectionName = OrdenCompraResource::getExternalConnectionName((int) $empresaId);
+        if (!$connectionName) {
+            return [['value' => 'UN', 'label' => 'UN']];
+        }
+
+        try {
+            $schema = DB::connection($connectionName)->getSchemaBuilder();
+            if (!$schema->hasTable('saeunid')) {
+                return [['value' => 'UN', 'label' => 'UN']];
+            }
+
+            $rows = DB::connection($connectionName)
+                ->table('saeunid')
+                ->when(
+                    $schema->hasColumn('saeunid', 'unid_cod_empr'),
+                    fn($q) => $q->where('unid_cod_empr', $amdgEmpresa)
+                )
+                ->select('unid_cod_unid', 'unid_sigl_unid', 'unid_nom_unid')
+                ->orderBy('unid_nom_unid')
+                ->limit(500)
+                ->get();
+
+            $list = $rows
+                ->map(function ($u) {
+                    $sigla = trim((string) ($u->unid_sigl_unid ?? ''));
+                    $nombre = trim((string) ($u->unid_nom_unid ?? ''));
+                    $codigo = trim((string) ($u->unid_cod_unid ?? ''));
+
+                    $valor = $sigla !== '' ? $sigla : ($nombre !== '' ? $nombre : $codigo);
+                    $label = $nombre !== '' ? ($sigla !== '' ? "{$sigla} - {$nombre}" : $nombre) : $valor;
+
+                    return [
+                        'value' => $valor,
+                        'label' => $label,
+                    ];
+                })
+                ->filter(fn($u) => trim((string) ($u['value'] ?? '')) !== '')
+                ->unique('value')
+                ->values()
+                ->all();
+
+            return !empty($list) ? $list : [['value' => 'UN', 'label' => 'UN']];
+        } catch (\Throwable $e) {
+            return [['value' => 'UN', 'label' => 'UN']];
+        }
+    }
     public function fetchBodegas(): array
     {
         $empresaId = $this->data['id_empresa'] ?? null;
