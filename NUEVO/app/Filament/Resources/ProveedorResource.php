@@ -21,6 +21,7 @@ use Filament\Forms\Set;
 use Filament\Forms\Components\Actions\Action;
 use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Mail;
 
 class ProveedorResource extends Resource
 {
@@ -28,6 +29,18 @@ class ProveedorResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-rectangle-stack';
 
+    public const UAFE_ESTADO_APROBADO = 'APROBADO';
+    public const UAFE_ESTADO_APROBADO_PARCIAL = 'APROBADO_PARCIAL';
+    public const UAFE_ESTADO_NO_APROBADO = 'NO_APROBADO';
+
+    public static function getUafeEstadoOptions(): array
+    {
+        return [
+            self::UAFE_ESTADO_APROBADO => 'Aprobado',
+            self::UAFE_ESTADO_APROBADO_PARCIAL => 'Aprobado Parcial',
+            self::UAFE_ESTADO_NO_APROBADO => 'No Aprobado',
+        ];
+    }
 
     public static function getExternalConnectionName(int $empresaId): ?string
     {
@@ -682,6 +695,34 @@ class ProveedorResource extends Resource
                         })
                         ->columns(2)
                 ])->columns(1),
+
+            Forms\Components\Section::make('Aprobaciones UAFE')
+                ->description('Gestiona la validación documental UAFE y su seguimiento.')
+                ->schema([
+                    Forms\Components\Select::make('uafe_estado')
+                        ->label('Estado UAFE')
+                        ->options(self::getUafeEstadoOptions())
+                        ->default(self::UAFE_ESTADO_NO_APROBADO)
+                        ->required(),
+
+                    Forms\Components\DateTimePicker::make('uafe_fecha_validacion')
+                        ->label('Fecha de validación')
+                        ->seconds(false),
+
+                    Forms\Components\FileUpload::make('uafe_documento_path')
+                        ->label('Constancia UAFE')
+                        ->disk('public')
+                        ->directory('uafe/proveedores')
+                        ->visibility('private')
+                        ->downloadable()
+                        ->openable(),
+
+                    Forms\Components\Textarea::make('uafe_observacion')
+                        ->label('Observación / documentación pendiente')
+                        ->rows(3)
+                        ->columnSpanFull(),
+                ])
+                ->columns(2),
         ];
     }
 
@@ -722,6 +763,17 @@ class ProveedorResource extends Resource
                     ->badge()
                     ->color('success')
                     ->searchable()
+                    ->sortable(),
+
+                Tables\Columns\TextColumn::make('uafe_estado')
+                    ->label('UAFE')
+                    ->badge()
+                    ->formatStateUsing(fn (?string $state): string => self::getUafeEstadoOptions()[$state] ?? ($state ?? '-'))
+                    ->color(fn (?string $state): string => match ($state) {
+                        self::UAFE_ESTADO_APROBADO => 'success',
+                        self::UAFE_ESTADO_APROBADO_PARCIAL => 'warning',
+                        default => 'danger',
+                    })
                     ->sortable(),
 
                 // Fecha de creación
@@ -783,10 +835,46 @@ class ProveedorResource extends Resource
                     ->color('success')
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
+            ->filters([
+                Tables\Filters\SelectFilter::make('uafe_estado')
+                    ->label('Estado UAFE')
+                    ->options(self::getUafeEstadoOptions()),
+            ])
             ->actions([
                 Tables\Actions\EditAction::make()
                     ->label('Editar')
                     ->visible(fn() => auth()->user()->can('Actualizar')),
+                Tables\Actions\Action::make('reenviarUafe')
+                    ->label('Reenviar solicitud UAFE')
+                    ->icon('heroicon-o-paper-airplane')
+                    ->color('warning')
+                    ->requiresConfirmation()
+                    ->visible(fn() => auth()->user()->can('Actualizar'))
+                    ->disabled(fn(Proveedores $record) => empty($record->correo) || $record->uafe_estado === self::UAFE_ESTADO_APROBADO)
+                    ->action(function (Proveedores $record): void {
+                        if (empty($record->correo)) {
+                            Notification::make()->title('El proveedor no tiene correo registrado.')->warning()->send();
+                            return;
+                        }
+
+                        Mail::raw(
+                            'Estimado proveedor, por favor remita la documentación pendiente de validación UAFE.',
+                            fn ($message) => $message->to($record->correo)->subject('Reenvío de documentación UAFE')
+                        );
+
+                        $record->uafeHistoriales()->create([
+                            'accion' => 'REENVIO_CORREO',
+                            'estado_anterior' => $record->uafe_estado,
+                            'estado_nuevo' => $record->uafe_estado,
+                            'detalle' => 'Reenvío de solicitud de documentación UAFE.',
+                            'correo_destino' => $record->correo,
+                            'enviado_en' => now(),
+                            'usuario_id' => auth()->id(),
+                        ]);
+
+                        Notification::make()->title('Correo reenviado correctamente.')->success()->send();
+                    }),
+
                 Tables\Actions\Action::make('anular')
                     ->label('Anular')
                     ->color('danger')
